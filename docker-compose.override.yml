@@ -1,0 +1,18 @@
+# Overrides the default `tail -f /dev/null` command so that
+# `docker compose up` runs the analytical pipeline against the sample data.
+#
+# The ./data/ directory is mounted as /data/ inside the container — this is
+# where the DuckDB warehouse file (warehouse.duckdb) is persisted across runs.
+#
+# To run for a different date or data path, use:
+#   docker compose run --rm pipeline python -m pipeline.main --reference-date YYYY-MM-DD
+#   make pipeline-date DATE=YYYY-MM-DD
+services:
+  pipeline:
+    command: python -m pipeline.main --reference-date 2025-03-04
+    environment:
+      DATA_PATH: /app/docs/sample-data
+      DB_PATH: /data/warehouse.duckdb
+      LOG_LEVEL: INFO
+    volumes:
+      - ./data:/data
