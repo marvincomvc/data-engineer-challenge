@@ -3,11 +3,16 @@ services:
     build: .
     environment:
       - PYTHONUNBUFFERED=1
-      - DATA_PATH=/app/docs/sample-data
+      - DATA_PATH=/data/input
+      - WAREHOUSE_PATH=/data/output/warehouse.duckdb
       - LOG_LEVEL=INFO
       - ENVIRONMENT=local
     volumes:
-      - ./docs/sample-data:/app/docs/sample-data:ro
+      - ./docs/sample-data:/data/input:ro
+      - pipeline_output:/data/output
       - ./scripts:/app/scripts
       - ./tests:/app/tests
     command: tail -f /dev/null
+
+volumes:
+  pipeline_output:

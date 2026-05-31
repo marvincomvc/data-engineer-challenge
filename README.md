@@ -233,33 +233,168 @@ Fique à vontade para usar ferramentas de IA durante o desafio. Se usar, documen
 1. Ao finalizar, **abra um Pull Request do seu fork para o repositório original** (branch `main`)
 2. Preencha as seções abaixo no README do seu PR:
 
+---
+
 ### Como rodar
 
-_Descreva os passos para rodar a aplicação._
+```bash
+# Subir o ambiente
+make up
+# ou: docker compose up -d --build
+
+# Rodar o pipeline para uma data específica | dados default (docs/sample-data/)
+make run REF_DATE=2025-03-16
+# ou diretamente:
+docker compose exec pipeline python -m pipeline.cli run --reference-date 2025-03-16 --force
+
+# Verificar status
+make status REF_DATE=2025-03-16
+
+# Com sample de dados gerados (10k linhas)
+make generate
+make run REF_DATE=2025-03-16 DATA=/tmp/generated
+
+# Com dados grandes (1M linhas)
+make generate-large
+make run REF_DATE=2025-03-16 DATA=/tmp/generated-large
+
+# Sem DATA=, usa o default (/data/input = docs/sample-data/)
+make run REF_DATE=2025-03-16
+
+# Rodar os testes
+make test
+
+# Rodar queries no DuckDB
+# Com o arquivo padrão (queries/example.sql)
+make query
+
+# Com outro arquivo SQL
+make query SQL=queries/my_query.sql
+
+
+```
+
+O pipeline gera o arquivo `data/warehouse.duckdb` com as camadas bronze, silver e gold, além da tabela de controle `control.pipeline_runs`.
+
+**Pré-requisitos:** Docker e Docker Compose. Todo processamento roda dentro do container — não é necessário instalar Python ou DuckDB localmente.
+
+---
 
 ### Premissas e decisões
 
-_Documente as ambiguidades que encontrou e as decisões que tomou._
+1. **Arquitetura Medallion com DuckDB:** Escolhi separar as camadas (bronze/silver/gold) usando schemas do DuckDB dentro de um único arquivo persistente (`warehouse.duckdb`). Isso simplifica o deploy local e mantém claro o progresso dos dados.
+
+2. **Deduplicação por CDC timestamp:** Os dados fonte vêm no formato CDC (com `Op` e `_timestamp`). Faço dedup mantendo o registro com `_timestamp` mais recente por chave natural (ex: `transaction_id`). Isso reflete como um CDC real funciona em produção.
+
+3. **Reconciliação como parte da camada Silver:** A lógica de categorização (MATCHED, MISMATCHED, etc.) roda no silver porque é uma transformação de negócio que precisa dos dados limpos. Os resultados ficam na mesma tabela `silver.reconciliation_results` com a coluna `reference_date` para idempotência.
+
+4. **Checks de qualidade SOFT vs HARD:** O check de `duplicate_transaction_id_in_run` é SOFT (não bloqueante) porque dados CDC da fonte já podem conter duplicatas legítimas (intencionalmente plantadas pelo gerador). Checks HARD (null transaction_id, CSV vazio, amount negativo) bloqueiam o pipeline.
+
+5. **Normalização no CSV reader:** O PaySettler CSV pode conter sujeira (vírgula decimal, falta de 'Z' no timestamp, símbolos de moeda, case inconsistente). Toda normalização acontece antes de entrar no bronze.
+
+6. **Schema drift coalesced:** Batch 1 e 2 têm colunas diferentes (payment_method só no batch 2). Uso UNION ALL com NULL para colunas ausentes, preservando todos os dados.
+
+7. **Idempotência via DELETE+INSERT:** Para a reference_date sendo reprocessada, a reconcialição deleta os resultados existentes antes de re-inserir. O controle de runs registra cada execução separadamente.
+
+---
 
 ### Visão geral da arquitetura
 
-_Descreva a estrutura do projeto. Diagrama é bem-vindo._
+```
+┌─────────────────────┐     ┌──────────────────────┐
+│  Parquet (CDC)      │     │  CSV (PaySettler)    │
+│  transactions (×2)  │     │  settlement_YYYY.csv  │
+│  reconciliation_*   │     └──────────┬───────────┘
+│  enterprise_company │                │
+└─────────┬───────────┘                │
+          │                            │
+          ▼                            ▼
+┌─────────────────────────────────────────────────────┐
+│                  BRONZE LAYER                        │
+│  Raw data + metadata (_ingested_at, _source_file)   │
+│  No business rules applied                          │
+└───────────────────────┬─────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────┐
+│                  SILVER LAYER                        │
+│  Deduplicated, normalized, typed                     │
+│  CDC dedup by _timestamp                             │
+│  Schema drift resolved (coalesce NULLs)             │
+│  Reconciliation logic (categorization)               │
+│  Quality checks (HARD/SOFT)                         │
+└───────────────────────┬─────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────┐
+│                  GOLD LAYER                          │
+│  ┌─────────────────────────────────────────────┐    │
+│  │ daily_reconciliation_health (Operations)    │    │
+│  │ daily_financial_volume (CFO)                │    │
+│  │ merchant_volume_summary (CFO)               │    │
+│  │ audit_discrepancies (Compliance)            │    │
+│  │ audit_unreconciled (Compliance)             │    │
+│  │ audit_reconciliation_runs_history (Compl.)  │    │
+│  └─────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────┐
+│              CONTROL LAYER                           │
+│  pipeline_runs — tracks every execution              │
+└─────────────────────────────────────────────────────┘
+```
+
+O pipeline é acionado via CLI: `python -m pipeline.cli run --reference-date YYYY-MM-DD`. Tudo roda sobre DuckDB (sem pandas como motor de processamento). Consulte [`docs/architecture/architecture.md`](docs/architecture/architecture.md) para o diagrama detalhado.
+
+---
 
 ### Extensibilidade
 
-_Se amanhã precisarmos plugar uma **segunda fonte de liquidação** (ex.: outro processador além do PaySettler, com schema parecido mas não idêntico), **quantos arquivos/linhas mudam** no seu projeto? Descreva o caminho concreto — quais módulos tocam, qual config precisa ser estendida, quais testes rodam de novo._
+Se uma segunda fonte de liquidação (ex.: "QuickSettle") precisasse ser adicionada com schema parecido mas não idêntico:
+
+1. **`pipeline/ingest/csv_reader.py`** — adicionar um novo reader (ou generalizar o existente com configuração de schema). ~50 linhas.
+2. **`pipeline/transform/bronze.py`** — adicionar `load_quicksettle()`. ~15 linhas.
+3. **`pipeline/transform/silver.py`** — adicionar `build_silver_quicksettle_settlements()` e ajustar `reconcile()` para JOIN com múltiplas fontes. ~30 linhas.
+4. **`pipeline/config.py`** — adicionar caminho para o novo CSV. ~5 linhas.
+5. **`tests/`** — adicionar testes para o novo reader e a silver transform. ~80 linhas.
+
+**Total: ~4-5 arquivos, ~180 linhas.** A lógica gold e as queries analíticas não mudam — elas consomem da silver.Já a reconciliação precisaria ser estendida para considerar múltiplas fontes de processador (hoje faz JOIN apenas com PaySettler).
+
+---
 
 ### Limites do desenho
 
-_O que a sua arquitetura **deliberadamente não suporta hoje** e que você sabe que uma versão de produção precisaria? Dê **2 a 3 exemplos concretos** (evite "melhorar logs" ou "mais testes" — seja específico)._
+1. **Sem particionamento temporal no DuckDB:** As tabelas silver/gold usam `CREATE OR REPLACE TABLE`, o que significa que a cada execução o warehouse inteiro é reprocessado. Em escala, isso não funciona — precisaria de particionamento por data (porquet files particionados + views no DuckDB).
+
+2. **Sem concorrência:** O pipeline usa um único arquivo DuckDB e não suporta execuções paralelas para datas diferentes. Não há locking ou coordenação — múltiplos workers escreveriam no mesmo arquivo e corromperiam dados.
+
+3. **Tabelas são totalmente recriadas:** As tabelas usam `CREATE OR REPLACE`, o que significa que todo o histórico é recalculado a cada run. Isso viola o requisito de imutabilidade do Compliance em produção — precisaria ser append-only com datas de validade (SCD Type 2 ou event-sourced).
+
+---
 
 ### O que faria diferente em produção
 
-_O que simplificou? O que a versão de produção precisaria?_
+1. **Armazenamento distribuído:** Trocaria o DuckDB local por um data lake (S3 + Iceberg/Delta) com um warehouse como Trino ou Spark para consultas. O DuckDB serviria apenas como cache local ou para desenvolvimento.
+
+2. **Orquestração:** Adicionaria um orquestrador (Airflow/Prefect) para agendar execuções diárias, gerenciar dependências, retries e alertas. O CLI atual seria o operador chamado pelo orquestrador.
+
+3. **CDC real:** Em vez de ler arquivos Parquet de export batch, usaria Debezium + Kafka para capturar mudanças do PostgreSQL em tempo real. Isso eliminaria a latência de 24h e permitiria reconciliação intraday.
+
+4. **Monitoramento:** Adicionaria métricas Prometheus/Grafana para contagens de categorias, duração das runs, taxa de falhas dos checks, e alertas automáticos (ex.: envio de mensagem em canal do Slack/Teams quando a run falha ou a discrepancy rate > threshold).
+
+5. **Schema registry:** Para evitar acoplamento frágil com o schema dos Parquet/CSV, usaria um schema registry (ou pelo menos validação com Pydantic/Great Expectations) na ingestão.
+
+---
 
 ### Ferramentas de IA utilizadas
 
-_Quais ferramentas de IA usou e para quê? Encorajamos o uso de IA — queremos entender como você a utiliza como ferramenta de trabalho._
+- **Claude Code (Anthropic)** — Utilizado como par de programação para:
+  - Geração da estrutura do projeto e boilerplate do pipeline
+  - Implementação das camadas bronze/silver/gold com DuckDB
+  - Criação da suíte de testes (conftest, unit tests, integration tests)
+  - Documentação (data model, architecture, runbook, scalability plan)
+  - O arquivo `claude.md` contém as instruções completas usadas como prompt
 
 ---
 
