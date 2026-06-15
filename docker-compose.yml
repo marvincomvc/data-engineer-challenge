@@ -8,6 +8,7 @@ services:
       - ENVIRONMENT=local
     volumes:
       - ./docs/sample-data:/app/docs/sample-data:ro
+      - ./pipeline:/app/pipeline
       - ./scripts:/app/scripts
       - ./tests:/app/tests
     command: tail -f /dev/null

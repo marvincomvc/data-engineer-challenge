@@ -1,8 +1,9 @@
-.PHONY: help up down build shell logs test generate generate-large clean
+.PHONY: help up down build shell logs test run status generate generate-large clean
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose
 PIPELINE := $(COMPOSE) exec pipeline
+REF ?= 2025-03-16
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -22,8 +23,14 @@ shell: ## Open an interactive shell inside the container
 logs: ## Tail container logs
 	$(COMPOSE) logs -f
 
-test: ## Run the generator smoke tests inside the container
+test: ## Run the full test suite inside the container
 	$(PIPELINE) pytest tests/ -v
+
+run: ## Run the pipeline for REF (default 2025-03-16): make run REF=2025-03-20
+	$(PIPELINE) python -m pipeline.cli run --reference-date $(REF)
+
+status: ## Show recent pipeline runs (control table)
+	$(PIPELINE) python -m pipeline.cli status
 
 generate: ## Generate a small synthetic dataset (10k rows) into /tmp/generated
 	$(PIPELINE) python scripts/generate_sample_data.py \
