@@ -1,8 +1,9 @@
 """Orchestrator: run the full bronze -> silver -> gold pipeline for a reference_date.
 
-Reprocesses the sliding 7-day window, building each date's facts idempotently.
-Every run is bracketed by a control-table row; a circuit-breaker failure is recorded
-as FAILED (not crashed) so the failure is observable.
+Order matters: quarantine runs BEFORE silver_settlement_current is derived, so the
+analytics tables never see quarantined rows. The requested date's run must be COMPLETED
+(STOP otherwise); FAILED runs that merely fall inside the 7-day lookback are skipped and
+reported (not silently ignored).
 """
 from __future__ import annotations
 
@@ -24,12 +25,16 @@ def run(con, reference_date: str, data_dir: str, full: bool = False) -> None:
     try:
         bronze.load_bronze(con, data_dir)
         silver.build_silver(con, PaySettlerAdapter())
-        quality.assert_circuit_breakers(con, reference_date)   # STOP tier
-        rejected = quality.quarantine_settlements(con)         # QUARANTINE tier
+        quality.init_quarantine(con)
+        quality.assert_circuit_breakers(con, reference_date)        # STOP on the requested date
+        rejected = quality.quarantine_settlements(con) + quality.quarantine_results(con)
+        silver.build_settlement_current(con)                        # AFTER quarantine
         gold.build_dimensions(con)
         gold.init_facts(con)
 
         if full:
+            for tbl in ("fact_reconciliation_result", "fact_reconciliation_daily", "fact_settlement_daily"):
+                con.execute(f"DELETE FROM {tbl}")
             dates = [
                 r[0] for r in con.execute(
                     "SELECT DISTINCT reference_date FROM silver_runs WHERE status = 'COMPLETED'"
@@ -38,16 +43,22 @@ def run(con, reference_date: str, data_dir: str, full: bool = False) -> None:
         else:
             dates = _window(reference_date)
 
+        skipped: list[str] = []
         for d in dates:
-            completed = con.execute(
-                "SELECT count(*) FROM silver_runs WHERE reference_date = ? AND status = 'COMPLETED'",
-                [d],
-            ).fetchone()[0]
-            if completed:
-                gold.build_facts(con, d)
+            status = con.execute(
+                "SELECT status FROM silver_runs WHERE reference_date = ?", [d]
+            ).fetchone()
+            if status and status[0] == "COMPLETED":
+                gold.build_reconciliation_facts(con, d)
+            elif status:  # a run exists for this date but is not COMPLETED
+                skipped.append(f"{d}({status[0]})")
 
+        gold.build_settlement_facts(con)
         gold.build_marts(con)
+
         written = con.sql("SELECT count(*) FROM fact_reconciliation_result").fetchone()[0]
         control.complete_run(con, run_id, read=written, written=written, rejected=rejected)
+        if skipped:
+            print(f"[pipeline] WARNING skipped non-COMPLETED runs in window: {', '.join(skipped)}")
     except Exception as exc:  # noqa: BLE001 - record the failure for observability, do not crash
         control.fail_run(con, run_id, str(exc))

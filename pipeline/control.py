@@ -1,8 +1,9 @@
 """Control / watermark table — the operational source of truth.
 
-Every pipeline run writes a row here. Status is updated in the SAME transaction as
-the data write (see runner), so the control table can never disagree with the facts.
-This is the first artifact to inspect when troubleshooting (Part 3.2).
+Every pipeline run writes a row here (RUNNING -> SUCCESS/FAILED). Each reference_date
+partition is written atomically and idempotently (db.transaction in gold.build_*), so a
+re-run after a failure safely reproduces partitions; atomicity is per-partition, not a single
+run-wide transaction. This is the first artifact to inspect when troubleshooting (Part 3.2).
 """
 from __future__ import annotations
 
