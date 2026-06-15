@@ -6,7 +6,7 @@
 -- P1: Histórico completo de uma transação específica (troque o UUID)
 SELECT *
 FROM mart_compliance_audit_trail
-WHERE transaction_id = '4d1969cf-2ef3-459d-af5d-293560a338ce';
+WHERE transaction_id = '33894d02-9e71-4b99-9b42-7d414e1f3362';
 
 -- P2: Quais transações ficaram sem conciliar, por categoria?
 SELECT category, count(*) AS n

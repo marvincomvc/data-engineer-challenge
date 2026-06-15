@@ -5,6 +5,14 @@
 > Este documento registra **o que** vamos construir e **por quê** — incluindo as
 > ambiguidades encontradas e as decisões tomadas.
 
+> ⚠️ **Nota (as-built):** este é o design PRÉ-implementação. Durante a construção, a
+> inspeção dos dados reais e uma revisão de código levaram a evoluções — ver
+> [`SOLUTION.md`](../../SOLUTION.md) como referência do que foi efetivamente entregue.
+> Principais deltas: **3 fatos** em vez de 2 (`fact_reconciliation_daily` por `reference_date`
+> p/ Ops + `fact_settlement_daily` por `settled_at` p/ CFO, evitando fan-out cross-date);
+> chaves surrogate **determinísticas**; **quarentena** de results órfãos/nulos (D12);
+> merchant **SCD2 as-was** no fato de auditoria; atomicidade **por-partição** (não run-wide).
+
 ---
 
 ## 1. Contexto e missão

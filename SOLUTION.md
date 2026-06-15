@@ -51,6 +51,9 @@ Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
 | D7 | Tolerância de valor | `difference <= R$ 0,01`. | Glossário. |
 | D8 | Run upstream `FAILED` (2025-03-22)? | Data não é processada; falha registrada na tabela de controle. | Não propagar resultado de reconciliação incompleta. |
 | D9 | `settled_amount` (CSV) ≠ `processor_amount` (results) por transação no fixture | Surfaço **ambos** na trilha de auditoria, sem assumir igualdade. | São fontes independentes no fixture; em produção eu adicionaria um check de DQ exigindo que reconciliem. |
+| D10 | "Volume por dia" (CFO) e "saúde por dia" (Ops) têm semânticas de data diferentes | **Dois fatos diários**: `fact_reconciliation_daily` (por `reference_date` da run, grão por transação) p/ Ops; `fact_settlement_daily` (por `settled_at`) p/ CFO | Evita contar a mesma liquidação em várias runs (fan-out cross-date) e a mistura de grãos. |
+| D11 | Surrogate keys precisam sobreviver entre runs (fatos persistem, dims são reconstruídas) | Chaves **determinísticas** (`dense_rank` sobre a chave natural), não sequência resetada | Um fato escrito numa run continua apontando pro merchant certo após outra run reconstruir a dimensão. |
+| D12 | Results com `run_id` órfão (=99, 5 linhas) e `merchant_id` nulo (16 linhas) | **Quarentena** (`quarantine_results` + contagem), não descarte silencioso nem bucket NULL | Trilha de auditoria reconcilia com os results mantidos; nada some sem registro. |
 
 **Descobertas nos dados reais** (provadas, ver `docs/design`): CDC com `U`/`D`; `id` **não-único** na união (dedup precisa de desempate determinístico via `rowid`); amounts em formato BR (`R$ 47.401,20`); 70 linhas de merchant → **50 distintos** (CDC); CSV com 510 linhas → **500 `transaction_id`** distintos; `reconciliation_results` com 837 linhas e 793 pares (txn, run) → grão do fato = **`result_id`**.
 
@@ -91,25 +94,26 @@ flowchart LR
 `adapters/` (base + paysettler) · `bronze` · `silver` (dedup CDC + conformação) ·
 `quality` (DQ) · `control` (watermark/observabilidade) · `gold` (dims/fatos/marts) · `db`.
 
-### Modelo dimensional (gold)
-- **`fact_reconciliation_result`** — grão = 1 linha por `reconciliation_result` (degenerada `result_id`, `transaction_id`, `reconciliation_run_id`). Trilha de auditoria → **Compliance**.
-- **`fact_settlement_daily`** — periodic snapshot, grão = merchant × moeda × dia. Linhas densas → tendências sem buraco. Serve **Operações** (taxas) e **CFO** (volume).
-- **`dim_merchant`** (SCD2), **`dim_date`** (role-playing: reference/settlement), **`dim_transaction_profile`** (junk: categoria, tolerância, status, flags).
+### Modelo dimensional (gold) — 3 fatos + 3 dimensões + 3 marts
+- **`fact_reconciliation_result`** — *transaction fact*, grão = 1 linha por `reconciliation_result` (degeneradas `result_id`, `transaction_id`, `reconciliation_run_id`). Trilha de auditoria imutável → **Compliance**. Merchant em **SCD2 as-was**.
+- **`fact_reconciliation_daily`** — *periodic snapshot*, grão = `reference_date` × merchant × moeda, **colapsado por (transação, run)** (pior severidade vence). Taxas de discrepância → **Operações**.
+- **`fact_settlement_daily`** — *periodic snapshot*, grão = `settled_at` × merchant × moeda, do **feed de liquidação** (1 linha/transação, sem fan-out). Volume liquidado/revertido/líquido + ticket médio → **CFO**.
+- **`dim_merchant`** (SCD2, chave determinística), **`dim_date`** (role-playing: reference/settlement, padded), **`dim_transaction_profile`** (junk: categoria, tolerância, status, flags).
 
-### Perguntas que o modelo responde (exemplos rodados no fixture)
-**Operações** — taxa de discrepância por dia: `13,2% → 12,7% → 12,2%` (03-10/13/16); runs com falha/rejeição (`control_pipeline_run`).
-**CFO** — volume por dia/moeda/CNAE; ticket médio `R$ 11.321 / 9.763 / 12.443`.
-**Compliance** — trilha completa por transação (com CNPJ); `UNRECONCILED_PROCESSOR=7`, `UNRECONCILED_INTERNAL=6`; ranking de CNPJ por `MISMATCHED`.
+### Perguntas que o modelo responde (exemplos rodados no fixture, `--full`)
+**Operações** — taxa de discrepância por dia (9 dias): varia `12,9%–15,8%`; runs com falha/rejeição via `control_pipeline_run` (rejeitadas=22).
+**CFO** — volume liquidado por **dia de liquidação** × moeda × CNAE (todo o feed cai em 2025-03-16); líquido e ticket médio (~R$ 24–27 mil por setor).
+**Compliance** — trilha completa por transação (com CNPJ); contagem de `UNRECONCILED_*`; ranking de CNPJ por `MISMATCHED`. Reconcilia: trilha = results mantidos (816), nada some em silêncio.
 *Deliberadamente NÃO responde:* receita/fees (sem dado), tempo real (é batch), relatório regulatório formatado.
 
 ---
 
 ## Qualidade, idempotência, observabilidade, testes
 
-- **Qualidade (3 camadas):** **conserta** na silver (vírgula/`R$`/timezone/caixa); **para** (circuit breaker) em ameaça à integridade (run `FAILED`, `transaction_id` nulo); **quarentena + alerta** (orphan `REVERSED` → `quarantine_settlement`; 1 caso no fixture). Decisão explícita do que para vs. alerta.
-- **Idempotência:** reprocessa a janela `[ref-7d, ref]` substituindo cada partição com `BEGIN; DELETE … WHERE reference_date; INSERT …; COMMIT;` num único arquivo `.duckdb`. Teste automatizado roda 2× a mesma data → contagens idênticas.
-- **Observabilidade:** `control_pipeline_run` (run_id, status, rows_read/written/rejected, timestamps) atualizada na mesma transação do dado → status nunca mente. É a 1ª fonte no troubleshooting.
-- **Testes:** **35 testes pytest** — unit das transformações (dedup CDC com delete, parser BR, tolerância), 1 por check de DQ, grão dos fatos, **idempotência**, e e2e da CLI.
+- **Qualidade (3 camadas):** **conserta** na silver (vírgula/`R$`/timezone/caixa); **para** (circuit breaker) quando a run da data pedida não está `COMPLETED` ou há `transaction_id` nulo; **quarentena + conta** (orphan `REVERSED` → `quarantine_settlement` = 1; results com `run_id` órfão ou `merchant_id` nulo → `quarantine_results` = 21). A quarentena roda **antes** de derivar `silver_settlement_current`, então as tabelas analíticas nunca veem linha quarentenada.
+- **Idempotência:** reprocessa a janela `[ref-7d, ref]` substituindo cada partição com `BEGIN; DELETE … WHERE reference_date; INSERT …; COMMIT;` (atômico **por partição**, no mesmo `.duckdb`). Re-rodar a mesma data → contagens idênticas (teste automatizado). Chaves surrogate determinísticas mantêm fatos antigos consistentes com dims reconstruídas.
+- **Observabilidade:** `control_pipeline_run` (run_id, status, rows_read/written/**rejected**, timestamps) — 1ª fonte no troubleshooting. Atomicidade é por-partição (não run-wide); o status reflete o desfecho da execução.
+- **Testes:** **43 testes pytest** — dedup CDC (com delete), parser BR de valores, tolerância, quarentenas, **grão e reconciliação dos fatos**, **ausência de fan-out do CFO**, chaves determinísticas, **idempotência**, e e2e da CLI.
 
 ---
 
@@ -127,10 +131,11 @@ Schema **canônico de liquidação** (`config.CANONICAL_SETTLEMENT_COLUMNS`). Ca
 
 ## Limites deliberados do desenho
 
-1. **Sem backfill de chegada tardia além da janela de 7 dias** — liquidação 10 dias atrasada cai na quarentena; produção precisaria de replay/reabertura de partição sob demanda.
+1. **Sem backfill de chegada tardia além da janela de 7 dias** — liquidação muito atrasada não reabre uma partição "fechada"; produção precisaria de replay sob demanda.
 2. **Não é fonte de verdade da categorização** — consome `reconciliation_results`; erro do upstream se propaga. Produção desacoplaria com testes de contrato.
-3. **DuckDB de processo único escritor** — sem múltiplos escritores nem serving concorrente de muitos usuários de BI no mesmo arquivo.
-4. **Surrogate keys regeneradas a cada run** (`dim_merchant`) — simplificação; produção persistiria as chaves e versionaria SCD2 incrementalmente.
+3. **DuckDB de processo único escritor** — sem múltiplos escritores nem serving concorrente de muitos usuários de BI no mesmo arquivo (ver Parte 3.3).
+4. **Checks de DQ ainda não codados** — queda de volume vs. `runs.total_transactions` e divergência de moeda interno×processador estão **documentados mas não implementados**; hoje a moeda ausente cai num bucket `'UNKNOWN'`.
+5. **Atomicidade por-partição, não run-wide** — uma falha após uma partição já commitada deixa essa partição gravada (o re-run é seguro por ser idempotente), e o enriquecimento de liquidação na trilha de auditoria reflete a **última** liquidação da transação.
 
 ---
 
