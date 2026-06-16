@@ -1,0 +1,14 @@
+# Keep the build context (and image) lean and free of local state.
+.git
+.gitignore
+.venv
+scratch/
+.claude/
+*.duckdb
+*.duckdb.wal
+__pycache__/
+*.py[codz]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+docs/evaluation/
