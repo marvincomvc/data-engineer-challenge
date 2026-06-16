@@ -22,17 +22,24 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     con = db.connect(args.db)
+    exit_code = 0
     try:
         if args.cmd == "run":
             runner.run(con, args.reference_date, args.data, args.full)
-            print(f"[pipeline] run for {args.reference_date} finished. Recent runs:")
+            recent = control.get_status(con)[:10]
+            if recent and recent[0][1] == "FAILED":
+                exit_code = 1   # non-zero so an orchestrator sees a STOP as a failure
+                print(f"[pipeline] run for {args.reference_date} FAILED — see control table:")
+            else:
+                print(f"[pipeline] run for {args.reference_date} finished. Recent runs:")
         else:
             control.ensure_control_table(con)
-        for row in control.get_status(con)[:10]:
+            recent = control.get_status(con)[:10]
+        for row in recent:
             print("  ", row)
     finally:
         con.close()
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -38,3 +38,8 @@ def test_run_quarantines_orphans_and_nulls(con, data_dir):
 
 def test_cli_run_smoke(data_dir):
     assert cli.main(["run", "--reference-date", "2025-03-16", "--data", data_dir, "--db", ":memory:"]) == 0
+
+
+def test_cli_exit_code_nonzero_on_stop(data_dir):
+    # A STOP (FAILED upstream run) must surface as a non-zero exit for orchestrators.
+    assert cli.main(["run", "--reference-date", "2025-03-22", "--data", data_dir, "--db", ":memory:"]) == 1

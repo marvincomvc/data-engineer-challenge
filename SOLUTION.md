@@ -31,6 +31,7 @@ docker compose up -d --build
 docker compose exec pipeline python -m pipeline.cli run --reference-date 2025-03-16
 docker compose exec pipeline pytest -v
 ```
+> `docker compose up` sobe o container **ocioso** (`tail -f /dev/null`) — o mesmo padrão do `Makefile` do desafio (`make up` + `make shell`/`make test`/`make run`). O pipeline é disparado via `exec` (acima), o que mantém o container como ambiente de execução reutilizável.
 
 As queries de exemplo por consumidor estão em [`docs/queries/`](docs/queries/).
 
@@ -135,7 +136,7 @@ Schema **canônico de liquidação** (`config.CANONICAL_SETTLEMENT_COLUMNS`). Ca
 2. **Não é fonte de verdade da categorização** — consome `reconciliation_results`; erro do upstream se propaga. Produção desacoplaria com testes de contrato.
 3. **DuckDB de processo único escritor** — sem múltiplos escritores nem serving concorrente de muitos usuários de BI no mesmo arquivo (ver Parte 3.3).
 4. **Checks de DQ ainda não codados** — queda de volume vs. `runs.total_transactions` e divergência de moeda interno×processador estão **documentados mas não implementados**; hoje a moeda ausente cai num bucket `'UNKNOWN'`.
-5. **Atomicidade por-partição, não run-wide** — uma falha após uma partição já commitada deixa essa partição gravada (o re-run é seguro por ser idempotente), e o enriquecimento de liquidação na trilha de auditoria reflete a **última** liquidação da transação.
+5. **Atomicidade por-partição, não run-wide** — uma falha após uma partição já commitada deixa essa partição gravada (o re-run é seguro por ser idempotente), e o enriquecimento de liquidação na trilha de auditoria reflete a **última** liquidação da transação. No modo `--full`, os fatos são limpos antes do rebuild — há uma janela curta de tabela vazia se o processo morrer no meio (o re-run idempotente recompõe).
 
 ---
 

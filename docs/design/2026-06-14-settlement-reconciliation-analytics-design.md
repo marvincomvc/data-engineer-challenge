@@ -12,6 +12,10 @@
 > p/ Ops + `fact_settlement_daily` por `settled_at` p/ CFO, evitando fan-out cross-date);
 > chaves surrogate **determinísticas**; **quarentena** de results órfãos/nulos (D12);
 > merchant **SCD2 as-was** no fato de auditoria; atomicidade **por-partição** (não run-wide).
+> Também: a pasta `sql/` citada na §3.2 não foi usada (o SQL fica inline em `gold.py`); e os
+> checks "queda de volume" (STOP) e "divergência de moeda" (QUARANTINE) da §6.2 são **roadmap,
+> não implementados** nesta versão (ver "Limites" no SOLUTION.md). O exit code da CLI é
+> não-zero quando a run termina FAILED (orquestrador enxerga o STOP).
 
 ---
 
