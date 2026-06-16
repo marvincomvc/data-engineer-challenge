@@ -78,16 +78,17 @@ flowchart LR
         S[(silver_*<br/>CDC dedup, normalização,<br/>schema canônico, DQ)]
     end
     subgraph Gold["GOLD — star schema"]
-        F1[(fact_reconciliation_result)]
-        F2[(fact_settlement_daily)]
+        F1[(fact_reconciliation_result<br/>audit, por transação)]
+        F2[(fact_reconciliation_daily<br/>Ops, por reference_date)]
+        F3[(fact_settlement_daily<br/>CFO, por settled_at)]
         D[(dim_merchant SCD2 · dim_date · dim_transaction_profile)]
         MA[(mart_ops · mart_cfo · mart_compliance)]
     end
     T & R & RU & M --> B
     CSV -->|PaySettlerAdapter| B
-    B --> S --> F1 & F2
-    D --> F1 & F2
-    F1 & F2 --> MA
+    B --> S --> F1 & F2 & F3
+    D --> F1 & F2 & F3
+    F1 & F2 & F3 --> MA
     MA --> Ops([Operações]) & CFO([CFO]) & Comp([Compliance])
 ```
 
@@ -114,7 +115,7 @@ flowchart LR
 - **Qualidade (3 camadas):** **conserta** na silver (vírgula/`R$`/timezone/caixa); **para** (circuit breaker) quando a run da data pedida não está `COMPLETED` ou há `transaction_id` nulo; **quarentena + conta** (orphan `REVERSED` → `quarantine_settlement` = 1; results com `run_id` órfão ou `merchant_id` nulo → `quarantine_results` = 21). A quarentena roda **antes** de derivar `silver_settlement_current`, então as tabelas analíticas nunca veem linha quarentenada.
 - **Idempotência:** reprocessa a janela `[ref-7d, ref]` substituindo cada partição com `BEGIN; DELETE … WHERE reference_date; INSERT …; COMMIT;` (atômico **por partição**, no mesmo `.duckdb`). Re-rodar a mesma data → contagens idênticas (teste automatizado). Chaves surrogate determinísticas mantêm fatos antigos consistentes com dims reconstruídas.
 - **Observabilidade:** `control_pipeline_run` (run_id, status, rows_read/written/**rejected**, timestamps) — 1ª fonte no troubleshooting. Atomicidade é por-partição (não run-wide); o status reflete o desfecho da execução.
-- **Testes:** **43 testes pytest** — dedup CDC (com delete), parser BR de valores, tolerância, quarentenas, **grão e reconciliação dos fatos**, **ausência de fan-out do CFO**, chaves determinísticas, **idempotência**, e e2e da CLI.
+- **Testes:** **44 testes pytest** — dedup CDC (com delete), parser BR de valores, tolerância, quarentenas, **grão e reconciliação dos fatos**, **ausência de fan-out do CFO**, chaves determinísticas, **idempotência**, exit code não-zero em FAILED, e e2e da CLI.
 
 ---
 
@@ -168,4 +169,4 @@ O gargalo **não é volume** — 1,8B linhas/ano cabe num nó (DuckDB faz out-of
 dbt para as transformações (testes/docs/linhagem nativos); SCD2 incremental com chaves persistidas; particionamento físico (Hive/Iceberg) em vez de tabela única; checks de DQ como contratos versionados (Great Expectations/Soda) emitindo via OpenLineage; alertas de frescor com SLA.
 
 ## Ferramentas de IA utilizadas
-Usei o **Claude (Anthropic)** como par de programação: pesquisa e **verificação com fontes** das capacidades do DuckDB (`MERGE INTO`, `union_by_name`, `QUALIFY`) e de padrões de modelagem (Kimball); geração de scaffolding de código e testes a partir das decisões de design; e revisão. **As decisões de arquitetura e modelagem foram tomadas, validadas contra os dados reais e documentadas por mim** — o spec em [`docs/design/`](docs/design/) registra cada decisão (D1–D9) e o porquê.
+Usei o **Claude (Anthropic)** como par de programação: pesquisa e **verificação com fontes** das capacidades do DuckDB (`MERGE INTO`, `union_by_name`, `QUALIFY`) e de padrões de modelagem (Kimball); geração de scaffolding de código e testes a partir das decisões de design; e revisão. **As decisões de arquitetura e modelagem foram tomadas, validadas contra os dados reais e documentadas por mim** — o spec em [`docs/design/`](docs/design/) registra cada decisão (D1–D12) e o porquê.
