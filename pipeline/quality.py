@@ -65,3 +65,26 @@ def quarantine_results(con) -> int:
         WHERE run_id NOT IN (SELECT id FROM silver_runs) OR merchant_id IS NULL
     """)
     return len(moved)
+
+
+def quarantine_currency_mismatch(con) -> int:
+    """QUARENTENA: liquidacao cuja moeda diverge da moeda da transacao interna pareada.
+
+    Protege CFO/Compliance de somar valores em moedas inconsistentes. No fixture tudo
+    e BRL, entao isso e 0 hoje; serve pra quando entrar uma fonte multi-moeda."""
+    cond = "s.currency IS NOT NULL AND t.currency IS NOT NULL AND s.currency <> t.currency"
+    moved = con.execute(f"""
+        INSERT INTO quarantine_settlement
+        SELECT s.transaction_id, 'CURRENCY_MISMATCH'
+        FROM silver_settlement s
+        JOIN silver_transactions t ON t.transaction_id = s.transaction_id
+        WHERE {cond}
+        RETURNING transaction_id
+    """).fetchall()
+    con.execute(f"""
+        DELETE FROM silver_settlement WHERE transaction_id IN (
+            SELECT s.transaction_id FROM silver_settlement s
+            JOIN silver_transactions t ON t.transaction_id = s.transaction_id
+            WHERE {cond})
+    """)
+    return len(moved)

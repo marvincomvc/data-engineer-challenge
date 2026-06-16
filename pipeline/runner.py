@@ -27,7 +27,9 @@ def run(con, reference_date: str, data_dir: str, full: bool = False) -> None:
         silver.build_silver(con, PaySettlerAdapter())
         quality.init_quarantine(con)
         quality.assert_circuit_breakers(con, reference_date)        # STOP na data pedida
-        rejected = quality.quarantine_settlements(con) + quality.quarantine_results(con)
+        rejected = (quality.quarantine_settlements(con)
+                    + quality.quarantine_results(con)
+                    + quality.quarantine_currency_mismatch(con))
         silver.build_settlement_current(con)                        # DEPOIS da quarentena
         gold.build_dimensions(con)
         gold.init_facts(con)

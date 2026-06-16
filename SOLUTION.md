@@ -31,7 +31,7 @@ docker compose up -d --build
 docker compose exec pipeline python -m pipeline.cli run --reference-date 2025-03-16
 docker compose exec pipeline pytest -v
 ```
-> `docker compose up` sobe o container **ocioso** (`tail -f /dev/null`) — o mesmo padrão do `Makefile` do desafio (`make up` + `make shell`/`make test`/`make run`). O pipeline é disparado via `exec` (acima), o que mantém o container como ambiente de execução reutilizável.
+> `docker compose up` sobe o container **ocioso** (`tail -f /dev/null`) — o mesmo padrão do `Makefile` do desafio (`make up` + `make shell`/`make test`/`make run`). O pipeline é disparado via `exec` (acima), o que mantém o container como ambiente de execução reutilizável. *Em hosts sem o plugin `compose`, use `docker-compose` (hífen) ou `make <alvo> COMPOSE=docker-compose`.*
 
 As queries de exemplo por consumidor estão em [`docs/queries/`](docs/queries/).
 
@@ -112,7 +112,7 @@ flowchart LR
 
 ## Qualidade, idempotência, observabilidade, testes
 
-- **Qualidade (3 camadas):** **conserta** na silver (vírgula/`R$`/timezone/caixa); **para** (circuit breaker) quando a run da data pedida não está `COMPLETED` ou há `transaction_id` nulo; **quarentena + conta** (orphan `REVERSED` → `quarantine_settlement` = 1; results com `run_id` órfão ou `merchant_id` nulo → `quarantine_results` = 21). A quarentena roda **antes** de derivar `silver_settlement_current`, então as tabelas analíticas nunca veem linha quarentenada.
+- **Qualidade (3 camadas):** **conserta** na silver (vírgula/`R$`/timezone/caixa); **para** (circuit breaker) quando a run da data pedida não está `COMPLETED` ou há `transaction_id` nulo; **quarentena + conta** (orphan `REVERSED` → `quarantine_settlement` = 1; results com `run_id` órfão ou `merchant_id` nulo → `quarantine_results` = 21; liquidação com moeda divergente da transação interna → `quarantine_settlement` = 0 no fixture, tudo BRL). A quarentena roda **antes** de derivar `silver_settlement_current`, então as tabelas analíticas nunca veem linha quarentenada.
 - **Idempotência:** reprocessa a janela `[ref-7d, ref]` substituindo cada partição com `BEGIN; DELETE … WHERE reference_date; INSERT …; COMMIT;` (atômico **por partição**, no mesmo `.duckdb`). Re-rodar a mesma data → contagens idênticas (teste automatizado). Chaves surrogate determinísticas mantêm fatos antigos consistentes com dims reconstruídas.
 - **Observabilidade:** `control_pipeline_run` (run_id, status, rows_read/written/**rejected**, timestamps) — 1ª fonte no troubleshooting. Atomicidade é por-partição (não run-wide); o status reflete o desfecho da execução.
 - **Testes:** **44 testes pytest** — dedup CDC (com delete), parser BR de valores, tolerância, quarentenas, **grão e reconciliação dos fatos**, **ausência de fan-out do CFO**, chaves determinísticas, **idempotência**, exit code não-zero em FAILED, e e2e da CLI.
@@ -136,7 +136,7 @@ Schema **canônico de liquidação** (`config.CANONICAL_SETTLEMENT_COLUMNS`). Ca
 1. **Sem backfill de chegada tardia além da janela de 7 dias** — liquidação muito atrasada não reabre uma partição "fechada"; produção precisaria de replay sob demanda.
 2. **Não é fonte de verdade da categorização** — consome `reconciliation_results`; erro do upstream se propaga. Produção desacoplaria com testes de contrato.
 3. **DuckDB de processo único escritor** — sem múltiplos escritores nem serving concorrente de muitos usuários de BI no mesmo arquivo (ver Parte 3.3).
-4. **Checks de DQ ainda não codados** — queda de volume vs. `runs.total_transactions` e divergência de moeda interno×processador estão **documentados mas não implementados**; hoje a moeda ausente cai num bucket `'UNKNOWN'`.
+4. **Check de queda de volume não codado** — comparar direto com `runs.total_transactions` daria falso-positivo neste fixture (lá `total_transactions` conta linhas do CSV, não `results`); um check honesto exigiria baseline histórico (média móvel), que 1 dia de CSV de exemplo não permite validar. *(A divergência de moeda interno×processador, ao contrário, **está implementada** como quarentena.)*
 5. **Atomicidade por-partição, não run-wide** — uma falha após uma partição já commitada deixa essa partição gravada (o re-run é seguro por ser idempotente), e o enriquecimento de liquidação na trilha de auditoria reflete a **última** liquidação da transação. No modo `--full`, os fatos são limpos antes do rebuild — há uma janela curta de tabela vazia se o processo morrer no meio (o re-run idempotente recompõe).
 
 ---

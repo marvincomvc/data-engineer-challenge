@@ -13,8 +13,8 @@
 > chaves surrogate **determinísticas**; **quarentena** de results órfãos/nulos (D12);
 > merchant **SCD2 as-was** no fato de auditoria; atomicidade **por-partição** (não run-wide).
 > Também: a pasta `sql/` citada na §3.2 não foi usada (o SQL fica inline em `gold.py`); e os
-> checks "queda de volume" (STOP) e "divergência de moeda" (QUARANTINE) da §6.2 são **roadmap,
-> não implementados** nesta versão (ver "Limites" no SOLUTION.md). O exit code da CLI é
+> o check "queda de volume" (STOP) da §6.2 é **roadmap** (não codado); a "divergência de moeda"
+> (QUARANTINE) **está implementada** (`quality.quarantine_currency_mismatch`). O exit code da CLI é
 > não-zero quando a run termina FAILED (orquestrador enxerga o STOP).
 
 ---
@@ -151,7 +151,7 @@ fato atômico. Serve **Operações** (taxas) **e CFO** (volume) com uma tabela s
 
 | Mart | Consumidor | Fonte | Entrega |
 |---|---|---|---|
-| `mart_ops_reconciliation_health` | Operações | `fact_settlement_daily` + `control_pipeline_run` | taxa de discrepância por dia, contagens por categoria, runs que falharam/demoraram |
+| `mart_ops_reconciliation_health` | Operações | `fact_reconciliation_daily` + `control_pipeline_run` | taxa de discrepância por dia, contagens por categoria, runs que falharam/demoraram |
 | `mart_cfo_settled_volume` | CFO | `fact_settlement_daily` | volume liquidado por dia × moeda × merchant/setor, valor revertido, ticket médio |
 | `mart_compliance_audit_trail` | Compliance | `fact_reconciliation_result` + `dim_merchant` (as-was) | trilha completa por transação (merchant/CNPJ, categoria, valores, run, arquivo, `settled_at`) |
 

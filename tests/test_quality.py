@@ -48,3 +48,16 @@ def test_quarantine_results_orphan_run_and_null_merchant():
     assert con.sql("select count(*) from silver_results").fetchone()[0] == 1
     reasons = {r[0] for r in con.sql("select reason from quarantine_results").fetchall()}
     assert reasons == {"ORPHAN_RUN", "NULL_MERCHANT"}
+
+
+def test_quarantine_currency_mismatch():
+    con = duckdb.connect()
+    con.execute("create table silver_settlement(transaction_id varchar, currency varchar, status varchar, has_internal boolean)")
+    con.execute("create table silver_transactions(transaction_id varchar, currency varchar)")
+    quality.init_quarantine(con)
+    con.execute("insert into silver_settlement values ('t1','BRL','SETTLED',true), ('t2','USD','SETTLED',true)")
+    con.execute("insert into silver_transactions values ('t1','BRL'), ('t2','BRL')")  # t2 diverge: USD vs BRL
+    moved = quality.quarantine_currency_mismatch(con)
+    assert moved == 1
+    assert con.sql("select count(*) from silver_settlement").fetchone()[0] == 1
+    assert con.sql("select reason from quarantine_settlement").fetchone()[0] == "CURRENCY_MISMATCH"
