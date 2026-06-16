@@ -1,9 +1,10 @@
-"""Control / watermark table — the operational source of truth.
+"""Tabela de controle / watermark — a fonte de verdade operacional.
 
-Every pipeline run writes a row here (RUNNING -> SUCCESS/FAILED). Each reference_date
-partition is written atomically and idempotently (db.transaction in gold.build_*), so a
-re-run after a failure safely reproduces partitions; atomicity is per-partition, not a single
-run-wide transaction. This is the first artifact to inspect when troubleshooting (Part 3.2).
+Toda execução do pipeline grava uma linha aqui (RUNNING -> SUCCESS/FAILED). Cada partição
+de reference_date é gravada de forma atômica e idempotente (db.transaction em gold.build_*),
+então re-rodar depois de uma falha reproduz as partições com segurança; a atomicidade é por
+partição, não uma única transação que abrange a execução inteira. Esse é o primeiro artefato
+a investigar quando algo dá errado (Parte 3.2).
 """
 from __future__ import annotations
 

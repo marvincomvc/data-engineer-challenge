@@ -18,7 +18,7 @@ def test_dedup_picks_latest_and_drops_delete():
         r[0]: r[1]
         for r in con.sql(f"select transaction_id, amount from ({dedup_latest('src','transaction_id')}) d").fetchall()
     }
-    assert out == {"a": 20.0}   # 'a' -> latest U(20); 'b' -> latest D -> dropped
+    assert out == {"a": 20.0}   # 'a' -> fica o U mais recente (20); 'b' -> o mais recente eh D, entao sai
 
 
 def test_dedup_real_active_count(con, data_dir):
@@ -26,4 +26,4 @@ def test_dedup_real_active_count(con, data_dir):
     n = con.sql(
         f"select count(*) from ({dedup_latest('bronze_transactions','transaction_id')}) d"
     ).fetchone()[0]
-    assert n == 995   # 947 latest-I + 48 latest-U; 5 latest-D excluded
+    assert n == 995   # 947 com I mais recente + 48 com U mais recente; 5 com D mais recente ficam de fora

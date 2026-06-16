@@ -1,4 +1,4 @@
-"""DuckDB connection and transaction helpers."""
+"""Helpers de conexao e transacao do DuckDB."""
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -8,17 +8,17 @@ import duckdb
 
 
 def connect(database: str = ":memory:") -> duckdb.DuckDBPyConnection:
-    """Open a DuckDB connection. Defaults to an in-memory database (used by tests)."""
+    """Abre uma conexao com o DuckDB. Por padrao usa um banco em memoria (usado nos testes)."""
     return duckdb.connect(database)
 
 
 @contextmanager
 def transaction(con: duckdb.DuckDBPyConnection) -> Iterator[None]:
-    """Run a block inside a single transaction.
+    """Executa um bloco dentro de uma unica transacao.
 
-    Commits on success; rolls back and re-raises on any exception. This is what
-    makes the partition-replace (DELETE + INSERT) idempotent and crash-safe: a
-    failure mid-write leaves the target table untouched instead of half-deleted.
+    Da commit se tudo der certo; faz rollback e relanca a excecao em caso de erro. E isso
+    que torna o replace de particao (DELETE + INSERT) idempotente e seguro contra falhas: se
+    quebrar no meio da escrita, a tabela de destino fica intacta em vez de meio apagada.
     """
     con.execute("BEGIN TRANSACTION")
     try:

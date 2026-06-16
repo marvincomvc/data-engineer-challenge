@@ -8,8 +8,8 @@ from pipeline.adapters.paysettler import PaySettlerAdapter
 
 @pytest.fixture
 def raw(tmp_path):
-    # Note: the comma-decimal amount is QUOTED, exactly as the real PaySettler
-    # CSV writes it (otherwise the decimal comma would split the column).
+    # Repare que o valor com vírgula decimal vem ENTRE ASPAS, igualzinho ao que
+    # o CSV real do PaySettler gera (senão a vírgula quebraria a coluna em duas).
     csv = tmp_path / "ps.csv"
     csv.write_text(
         'transaction_id,merchant_id,amount,currency,settled_at,processor_reference,status\n'
@@ -33,11 +33,11 @@ def test_canonical_fixes_dirty_rows(raw):
     cols = [d[0] for d in rel.description]
     rows = {r[cols.index("transaction_id")]: r for r in rel.fetchall()}
     amt, mid, src, st = (cols.index(c) for c in ("settled_amount", "merchant_id", "source_name", "status"))
-    assert float(rows["t2"][amt]) == 1000.50      # comma decimal fixed
-    assert float(rows["t4"][amt]) == 47401.20     # R$ + thousands dot + decimal comma
-    assert rows["t2"][mid] == "MERCH_002"          # uppercased
-    assert rows["t1"][src] == "paysettler"         # source tagged
-    assert rows["t3"][st] == "REVERSED"            # status preserved
+    assert float(rows["t2"][amt]) == 1000.50      # vírgula decimal corrigida
+    assert float(rows["t4"][amt]) == 47401.20     # R$ + ponto de milhar + vírgula decimal
+    assert rows["t2"][mid] == "MERCH_002"          # colocado em maiúsculas
+    assert rows["t1"][src] == "paysettler"         # origem marcada
+    assert rows["t3"][st] == "REVERSED"            # status mantido
 
 
 def test_settled_at_normalized_to_timestamp(raw):

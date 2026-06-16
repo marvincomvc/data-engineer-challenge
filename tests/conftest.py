@@ -1,4 +1,4 @@
-"""Shared pytest fixtures."""
+"""Fixtures de pytest compartilhadas."""
 import pathlib
 
 import pytest
@@ -11,7 +11,7 @@ DATA_DIR = REPO / "docs" / "sample-data"
 
 @pytest.fixture
 def con():
-    """A fresh in-memory DuckDB connection per test."""
+    """Uma conexao DuckDB em memoria nova a cada teste."""
     c = db.connect()
     yield c
     c.close()
@@ -19,14 +19,14 @@ def con():
 
 @pytest.fixture
 def data_dir() -> str:
-    """Path to the real sample-data fixtures (forward slashes for DuckDB)."""
+    """Caminho dos fixtures reais de sample-data (com barras normais pro DuckDB)."""
     return str(DATA_DIR).replace("\\", "/")
 
 
 @pytest.fixture
 def prepared(con, data_dir):
-    """A connection through bronze -> silver -> quarantine -> dims -> init_facts,
-    mirroring the runner's order, ready for gold fact/mart tests."""
+    """Conexao que ja passou por bronze -> silver -> quarantine -> dims -> init_facts,
+    seguindo a mesma ordem do runner, pronta pros testes de fact/mart da camada gold."""
     from pipeline import bronze, gold, quality, silver
     from pipeline.adapters.paysettler import PaySettlerAdapter
 

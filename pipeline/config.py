@@ -1,13 +1,13 @@
-"""Pipeline configuration: canonical settlement schema and source registry.
+"""Configuração do pipeline: schema canônico de liquidação e registro de fontes.
 
-Adding a second processor = one new adapter module + one entry in SOURCES.
-Silver/Gold operate only on the canonical schema, so they do not change.
+Adicionar um segundo processador = um novo módulo de adapter + uma entrada em SOURCES.
+Silver/Gold trabalham só com o schema canônico, então não precisam mudar.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Canonical settlement schema — every adapter must output exactly these columns.
+# Schema canônico de liquidação — todo adapter precisa devolver exatamente estas colunas.
 CANONICAL_SETTLEMENT_COLUMNS = [
     "transaction_id",
     "merchant_id",
@@ -19,8 +19,8 @@ CANONICAL_SETTLEMENT_COLUMNS = [
     "source_name",
 ]
 
-AMOUNT_TOLERANCE = 0.01          # R$ 0,01 — difference <= tolerance counts as matched
-RECONCILIATION_WINDOW_DAYS = 7   # sliding window [reference_date - 7d, reference_date]
+AMOUNT_TOLERANCE = 0.01          # R$ 0,01 — diferença <= tolerância já conta como casada
+RECONCILIATION_WINDOW_DAYS = 7   # janela deslizante [data_referencia - 7d, data_referencia]
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ class SourceConfig:
     file_glob: str
     decimal_separator: str
     assume_utc: bool
-    column_map: dict[str, str]   # raw column -> canonical column
+    column_map: dict[str, str]   # coluna bruta -> coluna canônica
 
 
 SOURCES: dict[str, SourceConfig] = {

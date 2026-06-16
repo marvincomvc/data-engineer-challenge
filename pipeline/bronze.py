@@ -1,9 +1,11 @@
-"""Bronze layer: raw ingestion of every source, as-is.
+"""Camada bronze: ingestao crua de todas as fontes, do jeito que vieram.
 
-CDC columns (Op, _timestamp) are preserved untouched — nothing is cleaned here.
-transactions_batch_* are stacked with union_by_name so the schema drift
-(payment_method only in batch_2) is tolerated; missing columns become NULL.
-The PaySettler CSV is read all-VARCHAR so the adapter can fix dirty values later.
+As colunas de CDC (Op, _timestamp) ficam intactas — aqui nao limpamos nada.
+Os transactions_batch_* sao empilhados com union_by_name pra tolerar a
+diferenca de schema (payment_method so existe no batch_2); as colunas que
+faltam viram NULL.
+O CSV do PaySettler e lido tudo como VARCHAR pra que o adapter consiga
+corrigir os valores sujos mais pra frente.
 """
 from __future__ import annotations
 

@@ -4,7 +4,7 @@ from pipeline import bronze
 def test_bronze_loads_real_counts(con, data_dir):
     bronze.load_bronze(con, data_dir)
     n = lambda t: con.sql(f"select count(*) from {t}").fetchone()[0]  # noqa: E731
-    assert n("bronze_transactions") == 1060        # 742 + 318 via union_by_name
+    assert n("bronze_transactions") == 1060        # 742 + 318 juntando os dois batches via union_by_name
     assert n("bronze_results") == 837
     assert n("bronze_runs") == 19
     assert n("bronze_merchants") == 70
@@ -14,5 +14,5 @@ def test_bronze_loads_real_counts(con, data_dir):
 def test_bronze_preserves_cdc_and_drift_columns(con, data_dir):
     bronze.load_bronze(con, data_dir)
     cols = {r[0] for r in con.sql("describe bronze_transactions").fetchall()}
-    assert "payment_method" in cols   # schema drift column (batch_2 only)
+    assert "payment_method" in cols   # coluna que so aparece no batch_2 (schema drift)
     assert "Op" in cols and "_timestamp" in cols

@@ -1,16 +1,16 @@
-"""Data-quality checks — tiered policy: FIX (in adapter/silver) / STOP / QUARANTINE.
+"""Checagens de qualidade de dados — politica em camadas: FIX (no adapter/silver) / STOP / QUARANTINE.
 
-STOP       = circuit breakers that abort the run (integrity threats on the requested date).
-QUARANTINE = isolate bad-but-non-corrupting rows into side tables and continue (counted + recorded).
+STOP       = circuit breakers que abortam a execucao (ameacas de integridade na data solicitada).
+QUARANTINE = isola as linhas ruins mas nao corruptoras em tabelas separadas e segue em frente (contadas + registradas).
 
-Quarantine tables are recreated each run (CREATE OR REPLACE) so re-running a date is idempotent
-and the tables always reflect the current state instead of accumulating duplicates.
+As tabelas de quarentena sao recriadas a cada execucao (CREATE OR REPLACE), entao rodar a mesma data
+de novo e idempotente e as tabelas sempre refletem o estado atual em vez de acumular duplicatas.
 """
 from __future__ import annotations
 
 
 class DataQualityError(Exception):
-    """Raised by a circuit breaker to abort the run (the transaction rolls back)."""
+    """Disparada por um circuit breaker para abortar a execucao (a transacao sofre rollback)."""
 
 
 def init_quarantine(con) -> None:
@@ -19,8 +19,8 @@ def init_quarantine(con) -> None:
 
 
 def assert_circuit_breakers(con, reference_date: str) -> None:
-    """STOP-tier checks for the requested reference_date."""
-    # STOP 1: the upstream reconciliation run for the requested date must be COMPLETED.
+    """Checagens de nivel STOP para a reference_date solicitada."""
+    # STOP 1: a execucao de reconciliacao upstream da data pedida precisa estar COMPLETED.
     runs = con.execute(
         "SELECT status FROM silver_runs WHERE reference_date = ?", [reference_date]
     ).fetchall()
@@ -28,14 +28,14 @@ def assert_circuit_breakers(con, reference_date: str) -> None:
         raise DataQualityError(
             f"upstream run for {reference_date} is not COMPLETED: {[r[0] for r in runs]}"
         )
-    # STOP 2: no settlement may have a NULL join key.
+    # STOP 2: nenhum settlement pode ter a chave de join NULL.
     nulls = con.sql("SELECT count(*) FROM silver_settlement WHERE transaction_id IS NULL").fetchone()[0]
     if nulls:
         raise DataQualityError(f"{nulls} settlement rows with NULL transaction_id")
 
 
 def quarantine_settlements(con) -> int:
-    """QUARANTINE orphan REVERSED settlements (no internal pair). Returns count moved."""
+    """QUARENTENA settlements REVERSED orfaos (sem par interno). Retorna a quantidade movida."""
     moved = con.execute("""
         INSERT INTO quarantine_settlement
         SELECT transaction_id, 'ORPHAN_REVERSED'
@@ -48,9 +48,9 @@ def quarantine_settlements(con) -> int:
 
 
 def quarantine_results(con) -> int:
-    """QUARANTINE results that cannot be safely modelled: a run_id with no run (orphan FK),
-    or a NULL merchant_id. Recorded with a reason and removed from silver_results so the
-    audit trail row count reconciles to (kept results), instead of silently shrinking on a join."""
+    """QUARENTENA results que nao da pra modelar com seguranca: um run_id sem run (FK orfa),
+    ou um merchant_id NULL. Sao registrados com um motivo e removidos do silver_results, assim a
+    contagem de linhas da trilha de auditoria fecha com (results mantidos), em vez de encolher silenciosamente num join."""
     moved = con.execute("""
         INSERT INTO quarantine_results
         SELECT id, transaction_id,

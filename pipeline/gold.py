@@ -1,30 +1,30 @@
-"""Gold layer: dimensional model (Kimball) — dimensions, facts, marts.
+"""Camada gold: modelo dimensional (Kimball) — dimensões, fatos e marts.
 
-Facts (separated by measurement process / date grain):
-  - fact_reconciliation_result : transaction grain (1 row per reconciliation_result) — Compliance audit trail.
-  - fact_reconciliation_daily  : periodic snapshot, reference_date x merchant x currency — Operations health.
-                                 Collapsed to one row per (transaction_id, run) so counts are per-transaction.
-  - fact_settlement_daily      : periodic snapshot, settlement_date x merchant x currency — CFO settled volume.
-                                 Built from the settlement feed (1 row/transaction) so volume is NOT fanned out
-                                 across reconciliation runs.
+Fatos (separados por processo de medição / granularidade de data):
+  - fact_reconciliation_result : grão de transação (1 linha por reconciliation_result) — trilha de auditoria de Compliance.
+  - fact_reconciliation_daily  : snapshot periódico, reference_date x merchant x currency — saúde operacional.
+                                 Colapsado para uma linha por (transaction_id, run) pra contar por transação.
+  - fact_settlement_daily      : snapshot periódico, settlement_date x merchant x currency — volume liquidado pro CFO.
+                                 Montado a partir do feed de settlement (1 linha/transação) pra não inflar o volume
+                                 espalhando entre as runs de reconciliação.
 
-Surrogate keys are DETERMINISTIC (dense_rank over natural keys) so facts written by earlier runs keep pointing
-at the right dimension rows after a later run rebuilds the dimensions. Facts are written with a transactional
-delete+insert per partition (idempotent).
+As surrogate keys são DETERMINÍSTICAS (dense_rank sobre as chaves naturais) pra que os fatos escritos por runs
+anteriores continuem apontando pras linhas certas da dimensão depois que uma run posterior reconstrói as dimensões.
+Os fatos são escritos com delete+insert transacional por partição (idempotente).
 """
 from __future__ import annotations
 
 from pipeline.db import transaction
 
-# Shared expressions — kept in sync between the junk dimension and the fact join.
-_WITHIN_TOL = "(r.difference IS NOT NULL AND abs(r.difference) <= 0.01)"   # |diff| <= R$0.01 (symmetric)
+# Expressões compartilhadas — mantidas em sincronia entre a junk dimension e o join do fato.
+_WITHIN_TOL = "(r.difference IS NOT NULL AND abs(r.difference) <= 0.01)"   # |diff| <= R$0,01 (simétrico)
 _SETTLE_STATUS = "COALESCE(s.status, 'N/A')"
 _HAS_INTERNAL = "(r.internal_amount IS NOT NULL)"
 _HAS_PROCESSOR = "(r.processor_amount IS NOT NULL)"
-# Worst-severity wins when one (transaction, run) has multiple result rows.
+# Quando um (transaction, run) tem várias linhas de resultado, vence a de pior severidade.
 _SEVERITY = ("CASE r.category WHEN 'MISMATCHED' THEN 3 "
              "WHEN 'UNRECONCILED_PROCESSOR' THEN 2 WHEN 'UNRECONCILED_INTERNAL' THEN 2 ELSE 1 END")
-# SCD2 "as-was": the merchant version valid on the run's reference_date.
+# SCD2 "como era na época": a versão do merchant válida na reference_date da run.
 _ASWAS = """LEFT JOIN dim_merchant m
         ON m.merchant_id = r.merchant_id
        AND CAST(ru.reference_date AS DATE) >= CAST(m.valid_from AS DATE)
@@ -32,8 +32,8 @@ _ASWAS = """LEFT JOIN dim_merchant m
 
 
 def build_dimensions(con) -> None:
-    # dim_date — padded to whole months around the observed event dates, so every fact
-    # reference_date / settlement_date is guaranteed a date_key (conformed role-playing dim).
+    # dim_date — estendida pra cobrir os meses inteiros em volta das datas dos eventos observados, garantindo
+    # que toda reference_date / settlement_date dos fatos tenha um date_key (dimensão role-playing conformada).
     con.execute("""
         CREATE OR REPLACE TABLE dim_date AS
         WITH all_dates AS (
@@ -56,8 +56,8 @@ def build_dimensions(con) -> None:
         FROM days
     """)
 
-    # dim_merchant — SCD Type 2. Deterministic merchant_key (dense_rank over natural key)
-    # so the same merchant_id always maps to the same surrogate across runs.
+    # dim_merchant — SCD Tipo 2. merchant_key determinística (dense_rank sobre a chave natural)
+    # pra que o mesmo merchant_id sempre caia na mesma surrogate entre as runs.
     con.execute("""
         CREATE OR REPLACE TABLE dim_merchant AS
         SELECT dense_rank() OVER (ORDER BY merchant_id, created_at) AS merchant_key,
@@ -67,8 +67,8 @@ def build_dimensions(con) -> None:
         FROM silver_merchants
     """)
 
-    # dim_transaction_profile — junk dimension; deterministic key; built from the SAME
-    # relation the fact joins (silver_settlement_current) so every fact combo has a match.
+    # dim_transaction_profile — junk dimension; chave determinística; montada a partir da MESMA
+    # relação que o fato faz join (silver_settlement_current) pra toda combinação do fato ter match.
     con.execute(f"""
         CREATE OR REPLACE TABLE dim_transaction_profile AS
         SELECT dense_rank() OVER (
@@ -119,9 +119,9 @@ def init_facts(con) -> None:
 
 
 def build_reconciliation_facts(con, reference_date: str) -> None:
-    """Audit fact (per result) + Ops daily fact (per transaction), for one reference_date."""
+    """Fato de auditoria (por resultado) + fato diário de Ops (por transação), pra uma reference_date."""
     with transaction(con):
-        # --- audit trail: one row per reconciliation_result ---
+        # --- trilha de auditoria: uma linha por reconciliation_result ---
         con.execute("DELETE FROM fact_reconciliation_result WHERE reference_date = CAST(? AS DATE)",
                     [reference_date])
         con.execute(f"""
@@ -148,7 +148,7 @@ def build_reconciliation_facts(con, reference_date: str) -> None:
             WHERE ru.reference_date = ?
         """, [reference_date])
 
-        # --- Ops daily health: collapse to one row per (transaction_id, run), worst severity wins ---
+        # --- saúde diária de Ops: colapsa pra uma linha por (transaction_id, run), vencendo a pior severidade ---
         con.execute("DELETE FROM fact_reconciliation_daily WHERE reference_date = CAST(? AS DATE)",
                     [reference_date])
         con.execute(f"""
@@ -181,7 +181,7 @@ def build_reconciliation_facts(con, reference_date: str) -> None:
 
 
 def build_settlement_facts(con) -> None:
-    """CFO settled volume by SETTLEMENT date — from the settlement feed (no fan-out across runs)."""
+    """Volume liquidado pro CFO por data de SETTLEMENT — vindo do feed de settlement (sem inflar entre runs)."""
     with transaction(con):
         con.execute("""
             DELETE FROM fact_settlement_daily WHERE settlement_date IN (

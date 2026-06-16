@@ -1,11 +1,11 @@
-"""PaySettler CSV adapter — the FIX layer for this source's dirty data.
+"""Adapter de CSV do PaySettler — a camada que corrige os dados sujos dessa fonte.
 
-Normalizes the known dirty patterns into the canonical schema:
-  - Brazilian currency amounts ("R$ 47.401,20" -> 47401.20: strip R$, dots are
-    thousands separators, comma is the decimal) and plain dot decimals ("873.16")
-  - timezone drift ("...Z", "...+00:00", or no suffix) -> naive UTC TIMESTAMP
-  - merchant_id case ("merch_001" -> "MERCH_001")
-  - tags every row with source_name so downstream is source-agnostic
+Normaliza os padroes de sujeira ja conhecidos para o schema canonico:
+  - valores em moeda brasileira ("R$ 47.401,20" -> 47401.20: tira o R$, ponto eh
+    separador de milhar e virgula eh o decimal) e decimais com ponto ("873.16")
+  - drift de timezone ("...Z", "...+00:00" ou sem sufixo) -> TIMESTAMP UTC naive
+  - caixa do merchant_id ("merch_001" -> "MERCH_001")
+  - marca cada linha com source_name pra deixar o downstream agnostico de fonte
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ class PaySettlerAdapter(SettlementAdapter):
     name = "paysettler"
 
     def canonical_sql(self, raw_relation: str) -> str:
-        # raw_relation is read as all-VARCHAR; we fix and type here.
+        # raw_relation vem como tudo VARCHAR; aqui a gente corrige e tipa.
         return f"""
         SELECT
             transaction_id,

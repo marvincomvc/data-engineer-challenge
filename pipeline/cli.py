@@ -1,4 +1,4 @@
-"""Command-line entrypoint: `python -m pipeline.cli run|status`."""
+"""Ponto de entrada da linha de comando: `python -m pipeline.cli run|status`."""
 from __future__ import annotations
 
 import argparse
@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
             runner.run(con, args.reference_date, args.data, args.full)
             recent = control.get_status(con)[:10]
             if recent and recent[0][1] == "FAILED":
-                exit_code = 1   # non-zero so an orchestrator sees a STOP as a failure
+                exit_code = 1   # diferente de zero pra que um orquestrador entenda o STOP como falha
                 print(f"[pipeline] run for {args.reference_date} FAILED — see control table:")
             else:
                 print(f"[pipeline] run for {args.reference_date} finished. Recent runs:")

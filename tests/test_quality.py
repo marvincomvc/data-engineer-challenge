@@ -23,7 +23,7 @@ def test_completed_run_passes():
     con = duckdb.connect()
     _seed(con)
     con.execute("insert into silver_runs values (1,'2025-03-16','COMPLETED')")
-    quality.assert_circuit_breakers(con, "2025-03-16")  # no raise
+    quality.assert_circuit_breakers(con, "2025-03-16")  # nao deve estourar
 
 
 def test_quarantine_orphan_reversed_settlement():
@@ -44,7 +44,7 @@ def test_quarantine_results_orphan_run_and_null_merchant():
         (11, 99, 't2', 'MERCH_2', 'MATCHED'),
         (12, 1,  't3', NULL,      'MATCHED')""")
     moved = quality.quarantine_results(con)
-    assert moved == 2                                       # orphan run + null merchant
+    assert moved == 2                                       # run orfa + merchant nulo
     assert con.sql("select count(*) from silver_results").fetchone()[0] == 1
     reasons = {r[0] for r in con.sql("select reason from quarantine_results").fetchall()}
     assert reasons == {"ORPHAN_RUN", "NULL_MERCHANT"}
