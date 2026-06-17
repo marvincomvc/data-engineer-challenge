@@ -64,38 +64,6 @@ Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
 
 ![Arquitetura — Settlement Reconciliation Analytics](docs/architecture.png)
 
-```mermaid
-flowchart LR
-    subgraph Fontes["docs/sample-data (CDC parquet + CSV)"]
-        T[transactions_batch_1/2<br/>CDC + schema drift]
-        R[reconciliation_results]
-        RU[reconciliation_runs]
-        M[enterprise_company]
-        CSV[settlement_paysettler.csv]
-    end
-    subgraph Bronze["BRONZE — cru, as-is"]
-        B[(bronze_*)]
-    end
-    subgraph Silver["SILVER — limpo + canônico"]
-        S[(silver_*<br/>CDC dedup, normalização,<br/>schema canônico, DQ)]
-    end
-    subgraph Gold["GOLD — star schema"]
-        F1[(fact_reconciliation_result<br/>audit, por transação)]
-        F2[(fact_reconciliation_daily<br/>Ops, por reference_date)]
-        F3[(fact_settlement_daily<br/>CFO, por settled_at)]
-        D[(dim_merchant SCD2 · dim_date · dim_transaction_profile)]
-        MA[(mart_ops · mart_cfo · mart_compliance)]
-    end
-    T & R & RU & M --> B
-    CSV -->|PaySettlerAdapter| B
-    B --> S --> F1 & F2 & F3
-    D --> F1 & F2 & F3
-    F1 & F2 & F3 --> MA
-    MA --> Ops([Operações]) & CFO([CFO]) & Comp([Compliance])
-```
-
-> 🖼️ Diagrama detalhado (editável): [`docs/architecture.excalidraw`](docs/architecture.excalidraw) — abrir em [excalidraw.com](https://excalidraw.com).
-
 **Módulos** (`pipeline/`): `cli` · `runner` (orquestra) · `config` (schema canônico + fontes) ·
 `adapters/` (base + paysettler) · `bronze` · `silver` (dedup CDC + conformação) ·
 `quality` (DQ) · `control` (watermark/observabilidade) · `gold` (dims/fatos/marts) · `db`.
