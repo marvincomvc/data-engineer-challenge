@@ -92,6 +92,8 @@ flowchart LR
     MA --> Ops([Operações]) & CFO([CFO]) & Comp([Compliance])
 ```
 
+> 🖼️ Diagrama detalhado (editável): [`docs/architecture.excalidraw`](docs/architecture.excalidraw) — abrir em [excalidraw.com](https://excalidraw.com).
+
 **Módulos** (`pipeline/`): `cli` · `runner` (orquestra) · `config` (schema canônico + fontes) ·
 `adapters/` (base + paysettler) · `bronze` · `silver` (dedup CDC + conformação) ·
 `quality` (DQ) · `control` (watermark/observabilidade) · `gold` (dims/fatos/marts) · `db`.
