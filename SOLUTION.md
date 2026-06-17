@@ -47,7 +47,7 @@ Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
 | D2 | Papel do CSV PaySettler, já que o resultado existe? | **Feed canônico de liquidação**: enriquece (`settled_at`, `REVERSED`), faz cross-check e é o ponto de extensão. | `reconciliation_results` não tem `settled_at` nem status de reversão. |
 | D3 | Tratamento do CDC (`Op`/`_timestamp`)? | Última versão por chave **e exclui `Op='D'`**. | Os dados reais têm `U` (update) e `D` (delete) — embora o gerador do repo só emita `I`. |
 | D4 | Schema drift (`payment_method` só no batch 2)? | `read_parquet(..., union_by_name=true)`. | Unifica por nome; ausente vira NULL. |
-| D5 | Histórico de atributos do merchant (SCD)? | **SCD Type 2** em `dim_merchant`. | Compliance precisa de auditoria "as-was"; Type 1 destruiria a trilha. |
+| D5 | Histórico de atributos do merchant (SCD)? | `dim_merchant` modelada como **SCD Type 2** (`valid_from`/`valid_to`/`is_current` + join as-was); hoje guarda a versão corrente, pois a silver consome a última versão — ver Limites. | Compliance precisa de auditoria "as-was"; a estrutura deixa o histórico pronto pra ser retido. |
 | D6 | Granularidade temporal | Batch diário por `reference_date` + janela deslizante de 7 dias. | Janela de reconciliação do domínio. |
 | D7 | Tolerância de valor | `difference <= R$ 0,01`. | Glossário. |
 | D8 | Run upstream `FAILED` (2025-03-22)? | Data não é processada; falha registrada na tabela de controle. | Não propagar resultado de reconciliação incompleta. |
@@ -69,10 +69,10 @@ Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
 `quality` (DQ) · `control` (watermark/observabilidade) · `gold` (dims/fatos/marts) · `db`.
 
 ### Modelo dimensional (gold) — 3 fatos + 3 dimensões + 3 marts
-- **`fact_reconciliation_result`** — *transaction fact*, grão = 1 linha por `reconciliation_result` (degeneradas `result_id`, `transaction_id`, `reconciliation_run_id`). Trilha de auditoria imutável → **Compliance**. Merchant em **SCD2 as-was**.
+- **`fact_reconciliation_result`** — *transaction fact*, grão = 1 linha por `reconciliation_result` (degeneradas `result_id`, `transaction_id`, `reconciliation_run_id`). Trilha de auditoria imutável → **Compliance**. Liga ao merchant por join as-was sobre `dim_merchant` (resolve para a versão corrente hoje — ver Limites).
 - **`fact_reconciliation_daily`** — *periodic snapshot*, grão = `reference_date` × merchant × moeda, **colapsado por (transação, run)** (pior severidade vence). Taxas de discrepância → **Operações**.
 - **`fact_settlement_daily`** — *periodic snapshot*, grão = `settled_at` × merchant × moeda, do **feed de liquidação** (1 linha/transação, sem fan-out). Volume liquidado/revertido/líquido + ticket médio → **CFO**.
-- **`dim_merchant`** (SCD2, chave determinística), **`dim_date`** (role-playing: reference/settlement, padded), **`dim_transaction_profile`** (junk: categoria, tolerância, status, flags).
+- **`dim_merchant`** (estrutura SCD2 + chave determinística; guarda a versão corrente hoje — ver Limites), **`dim_date`** (role-playing: reference/settlement, padded), **`dim_transaction_profile`** (junk: categoria, tolerância, status, flags).
 
 ### Perguntas que o modelo responde (exemplos rodados no fixture, `--full`)
 **Operações** — taxa de discrepância por dia (9 dias): varia `12,9%–15,8%`; runs com falha/rejeição via `control_pipeline_run` (rejeitadas=22).
@@ -110,6 +110,7 @@ Schema **canônico de liquidação** (`config.CANONICAL_SETTLEMENT_COLUMNS`). Ca
 3. **DuckDB de processo único escritor** — sem múltiplos escritores nem serving concorrente de muitos usuários de BI no mesmo arquivo (ver Parte 3.3).
 4. **Check de queda de volume não codado** — comparar direto com `runs.total_transactions` daria falso-positivo neste fixture (lá `total_transactions` conta linhas do CSV, não `results`); um check honesto exigiria baseline histórico (média móvel), que 1 dia de CSV de exemplo não permite validar. *(A divergência de moeda interno×processador, ao contrário, **está implementada** como quarentena.)*
 5. **Atomicidade por-partição, não run-wide** — uma falha após uma partição já commitada deixa essa partição gravada (o re-run é seguro por ser idempotente), e o enriquecimento de liquidação na trilha de auditoria reflete a **última** liquidação da transação. No modo `--full`, os fatos são limpos antes do rebuild — há uma janela curta de tabela vazia se o processo morrer no meio (o re-run idempotente recompõe).
+6. **Histórico de merchant não retido** — `dim_merchant` e o join são SCD2, mas a silver guarda só a última versão de cada merchant (1 versão por merchant hoje); auditoria "as-was" de verdade exigiria preservar as versões anteriores na silver.
 
 ---
 

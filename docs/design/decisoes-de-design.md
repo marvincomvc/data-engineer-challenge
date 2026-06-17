@@ -20,7 +20,7 @@ isso em produtos de dados para os três times.
 | D2 | Qual o papel do CSV do PaySettler, se o resultado já existe? | É o feed canônico de liquidação: traz `settled_at` e o status SETTLED/REVERSED (que não existem em `reconciliation_results`), serve de cross-check de qualidade e é o ponto de extensão para um 2º processador. |
 | D3 | Como tratar o CDC (`Op`/`_timestamp`)? | Dedup para a última versão por chave natural e exclui registros cujo último `Op` é `D`. Os dados reais têm update e delete. |
 | D4 | Schema drift entre os lotes (`payment_method` só no 2º)? | Leitura com `union_by_name=true` (unifica por nome; coluna ausente vira NULL). |
-| D5 | Histórico de atributos do merchant? | SCD Type 2 em `dim_merchant`. Compliance precisa enxergar a transação sob a razão social/CNAE vigentes na época, não os atuais. |
+| D5 | Histórico de atributos do merchant? | `dim_merchant` modelada como SCD Type 2 (colunas `valid_from`/`valid_to`/`is_current` e join as-was no fato de auditoria). Hoje a silver consome a última versão de cada merchant, então a dimensão guarda uma versão (a corrente) por merchant — reter histórico real é o passo que falta (ver Limites). A estrutura já está pronta para isso. |
 | D6 | Granularidade temporal? | Batch diário por `reference_date`, com janela de reprocessamento de 7 dias (a janela de reconciliação do domínio). |
 | D7 | Tolerância de valor? | `difference <= R$ 0,01` conta como casado (regra do glossário). |
 | D8 | Run upstream com status FAILED (ex.: 2025-03-22)? | A data não é processada — não geramos analytics de uma reconciliação que não completou; fica sinalizado na tabela de controle. |
@@ -52,9 +52,11 @@ conformadas — Ops, CFO e Compliance batem entre si.
 **Fatos**
 
 - `fact_reconciliation_result` — transaction fact, grão de 1 linha por `reconciliation_result`.
-  É a trilha de auditoria imutável (Compliance). Liga ao merchant na versão SCD2 válida na
-  data ("as-was"). `transaction_id`, `reconciliation_run_id` e `processor_reference` entram
-  como dimensões degeneradas.
+  É a trilha de auditoria imutável (Compliance). Liga ao merchant por um join as-was sobre
+  `dim_merchant` (compara a data com `valid_from`/`valid_to`); como a dimensão guarda só a
+  versão corrente hoje, na prática resolve para a versão atual — a mecânica as-was já fica
+  pronta para quando houver histórico. `transaction_id`, `reconciliation_run_id` e
+  `processor_reference` entram como dimensões degeneradas.
 - `fact_reconciliation_daily` — periodic snapshot, grão de `reference_date` × merchant × moeda,
   colapsando por (transação, run) com a pior severidade. Taxas de discrepância (Operações).
 - `fact_settlement_daily` — periodic snapshot, grão de `settled_at` × merchant × moeda, vindo
@@ -63,8 +65,10 @@ conformadas — Ops, CFO e Compliance batem entre si.
 
 **Dimensões**
 
-- `dim_merchant` — SCD Type 2, com chave surrogate determinística. Guarda `legal_name`,
-  `trade_name`, CNPJ, `primary_cnae` e `valid_from/valid_to/is_current`.
+- `dim_merchant` — modelada como SCD Type 2 (chave surrogate determinística;
+  `valid_from`/`valid_to`/`is_current`), guardando `legal_name`, `trade_name`, CNPJ e
+  `primary_cnae`. Hoje guarda uma versão por merchant (a silver deduplica para a última);
+  reter histórico real é o que falta — ver Limites.
 - `dim_date` — role-playing, usada como `reference_date` e `settlement_date`.
 - `dim_transaction_profile` — junk (categoria, dentro-da-tolerância, status de liquidação,
   flags de presença), só com as combinações que de fato ocorrem.
@@ -76,7 +80,8 @@ conformadas — Ops, CFO e Compliance batem entre si.
 - `mart_cfo_settled_volume` (CFO) — volume liquidado por dia × moeda × setor (CNAE), valor
   revertido, líquido e ticket médio.
 - `mart_compliance_audit_trail` (Compliance) — trilha completa por transação: merchant/CNPJ,
-  categoria, valores interno/processador, run e arquivo de origem.
+  categoria, valores interno/processador, a run e a `processor_reference` (referência do
+  processador).
 
 ## Perguntas que o modelo responde (e as que não)
 
@@ -96,14 +101,14 @@ Exemplos de queries em `docs/queries/`.
 
 - **FIX** (conserta na silver) — dado recuperável, normaliza. Ex.: vírgula decimal,
   `settled_at` sem `Z`, `merchant_id` em caixa errada.
-- **STOP** (circuit breaker) — ameaça à integridade, aborta a run (a transação reverte) e
-  sinaliza. Ex.: `transaction_id` nulo; run upstream com status FAILED.
+- **STOP** (circuit breaker) — ameaça à integridade: aborta a run **antes de gerar os fatos**
+  e sinaliza. Ex.: `transaction_id` nulo; run upstream com status FAILED.
 - **QUARANTINE** (isola e segue) — linha ruim mas que não corrompe, vai para uma tabela de
   quarentena com o motivo. Ex.: resultado com `run_id` órfão, `merchant_id` nulo, estorno sem
   par interno, moeda divergente entre interno e processador.
 
-Uma checagem de queda brusca de volume (vs. o total esperado da run) ficou como roadmap — não
-foi codada.
+Uma checagem de queda brusca de volume ficou como roadmap — não foi codada (exigiria um
+baseline histórico que um único dia de CSV de exemplo não permite validar).
 
 ## Idempotência
 
@@ -122,10 +127,10 @@ por partição, não da execução inteira.
 
 ## Observabilidade
 
-Cada execução grava uma linha em `control_pipeline_run` (`RUNNING → SUCCESS/FAILED`, linhas
-lidas/escritas/rejeitadas, timestamps e mensagem de erro), atualizada na mesma transação que
-escreve os dados — então o status nunca fica fora de sincronia com o dado. É o primeiro
-artefato a consultar num troubleshooting.
+Cada execução grava uma linha em `control_pipeline_run`: `RUNNING` no início, `SUCCESS` ou
+`FAILED` no fim, com linhas lidas/escritas/rejeitadas, timestamps e mensagem de erro. Cada
+partição de fato é gravada de forma transacional (atomicidade por partição); o status é
+atualizado ao fim da execução. É o primeiro artefato a consultar num troubleshooting.
 
 ## Testes
 
@@ -146,15 +151,18 @@ timezone). Silver e Gold não mudam, porque trabalham só sobre o schema canôni
 
 ## Limites deliberados
 
-1. **Sem backfill além da janela de 7 dias.** Uma liquidação que chega muito atrasada cai na
-   quarentena e não reabre uma partição já fechada; produção precisaria de um replay sob
-   demanda com reabertura controlada.
+1. **Sem backfill de chegada tardia além da janela de 7 dias.** Uma reconciliação de uma data
+   fora da janela não é reprocessada sem `--full`; não há um tratamento dedicado de chegada
+   tardia. Produção precisaria de um replay/backfill sob demanda.
 2. **Não é a fonte de verdade da categorização.** Consome `reconciliation_results` do
    upstream; se o matching do serviço estiver errado, o erro se propaga. Produção desacoplaria
    isso com testes de contrato contra o upstream.
 3. **DuckDB de um único processo escritor.** Não suporta vários processos escrevendo nem
    serving concorrente de muitos usuários de BI no mesmo arquivo. Ao escalar, o que aperta
    primeiro é a concorrência, não o volume.
+4. **Histórico de merchant não retido.** A dimensão e o join são SCD Type 2, mas a silver
+   guarda só a última versão de cada merchant — então hoje há uma versão por merchant. Para
+   auditoria "as-was" de verdade, a silver precisaria preservar as versões anteriores.
 
 Arquitetura de produção, troubleshooting e escalabilidade estão na Parte 3 do
 [`SOLUTION.md`](../../SOLUTION.md).
@@ -166,6 +174,6 @@ Arquitetura de produção, troubleshooting e escalabilidade estão na Parte 3 do
 - `reconciliation_results`: 837 (MATCHED 726, MISMATCHED 62, UNRECONCILED_PROCESSOR 28,
   UNRECONCILED_INTERNAL 21).
 - `reconciliation_runs`: 10 runs, uma delas FAILED (2025-03-22), aproximadamente a cada 3 dias.
-- `enterprise_company`: 70 merchants.
+- `enterprise_company`: 70 linhas / 50 merchants distintos (CDC: 50 inserts + 20 updates).
 - `settlement_paysettler.csv`: 510 linhas de um único dia (2025-03-16); SETTLED 483 /
   REVERSED 27; 22 com vírgula decimal; 49 sem `Z` no timestamp.

@@ -56,8 +56,10 @@ def build_dimensions(con) -> None:
         FROM days
     """)
 
-    # dim_merchant — SCD Tipo 2. merchant_key determinística (dense_rank sobre a chave natural)
-    # pra que o mesmo merchant_id sempre caia na mesma surrogate entre as runs.
+    # dim_merchant — estrutura SCD Tipo 2 (valid_from/valid_to/is_current); hoje guarda a versao
+    # corrente de cada merchant, porque a silver consome a ultima versao (reter historico exigiria
+    # preservar as versoes anteriores na silver). merchant_key deterministica (dense_rank sobre a
+    # chave natural) pra que o mesmo merchant_id sempre caia na mesma surrogate entre as runs.
     con.execute("""
         CREATE OR REPLACE TABLE dim_merchant AS
         SELECT dense_rank() OVER (ORDER BY merchant_id, created_at) AS merchant_key,
