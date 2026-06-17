@@ -2,7 +2,7 @@
 
 Notas de design do desafio: o que construímos e por quê. As decisões abaixo foram tomadas
 inspecionando os dados reais em `docs/sample-data/`. O que ficou efetivamente entregue está
-no [`SOLUTION.md`](../../SOLUTION.md); aqui fica o raciocínio por trás.
+no [`SOLUTION.md`](../../SOLUCAO.md); aqui fica o raciocínio por trás.
 
 ## Contexto
 
@@ -165,7 +165,7 @@ timezone). Silver e Gold não mudam, porque trabalham só sobre o schema canôni
    auditoria "as-was" de verdade, a silver precisaria preservar as versões anteriores.
 
 Arquitetura de produção, troubleshooting e escalabilidade estão na Parte 3 do
-[`SOLUTION.md`](../../SOLUTION.md).
+[`SOLUTION.md`](../../SOLUCAO.md).
 
 ## Números do fixture (conferidos, não assumidos)
 
