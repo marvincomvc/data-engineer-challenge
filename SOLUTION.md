@@ -62,6 +62,8 @@ Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
 
 ## Visão geral da arquitetura
 
+![Arquitetura — Settlement Reconciliation Analytics](docs/architecture.png)
+
 ```mermaid
 flowchart LR
     subgraph Fontes["docs/sample-data (CDC parquet + CSV)"]
