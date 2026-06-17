@@ -1,8 +1,8 @@
 # Solução — Settlement Reconciliation Analytics
 
-Pipeline analítico que transforma os dados do **Settlement Reconciliation Service** em
-produtos de dados para **Operações**, **CFO** e **Compliance**. Stack: **Python 3.12 +
-DuckDB + Docker Compose**, arquitetura **medalhão (bronze → silver → gold) + adapters**.
+Pipeline analítico que transforma os dados do Settlement Reconciliation Service em produtos
+de dados para Operações, CFO e Compliance. A stack é Python 3.12, DuckDB e Docker Compose, com
+arquitetura medalhão (bronze → silver → gold) e adapters por fonte.
 
 > Documento de design detalhado (decisões e tradeoffs): [`docs/design/decisoes-de-design.md`](docs/design/decisoes-de-design.md).
 
@@ -39,7 +39,7 @@ As queries de exemplo por consumidor estão em [`docs/queries/`](docs/queries/).
 
 ## Premissas e decisões
 
-Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
+As decisões abaixo vieram da inspeção do fixture em `docs/sample-data`, não de suposições sobre o domínio.
 
 | # | Ambiguidade | Decisão | Por quê |
 |---|---|---|---|
@@ -56,7 +56,7 @@ Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
 | D11 | Surrogate keys precisam sobreviver entre runs (fatos persistem, dims são reconstruídas) | Chaves **determinísticas** (`dense_rank` sobre a chave natural), não sequência resetada | Um fato escrito numa run continua apontando pro merchant certo após outra run reconstruir a dimensão. |
 | D12 | Results com `run_id` órfão (=99, 5 linhas) e `merchant_id` nulo (16 linhas) | **Quarentena** (`quarantine_results` + contagem), não descarte silencioso nem bucket NULL | Trilha de auditoria reconcilia com os results mantidos; nada some sem registro. |
 
-**Descobertas nos dados reais** (provadas, ver `docs/design`): CDC com `U`/`D`; `id` **não-único** na união (dedup precisa de desempate determinístico via `rowid`); amounts em formato BR (`R$ 47.401,20`); 70 linhas de merchant → **50 distintos** (CDC); CSV com 510 linhas → **500 `transaction_id`** distintos; `reconciliation_results` com 837 linhas e 793 pares (txn, run) → grão do fato = **`result_id`**.
+Algumas descobertas no fixture guiaram o desenho (provadas, ver `docs/design`): há CDC com `U`/`D`; o `id` não é único na união dos lotes, então o dedup precisa de um desempate determinístico via `rowid`; os valores vêm em formato BR (`R$ 47.401,20`); as 70 linhas de merchant se reduzem a 50 distintos (CDC); o CSV tem 510 linhas para 500 `transaction_id` distintos; e `reconciliation_results` tem 837 linhas em 793 pares (txn, run) — por isso o grão do fato de auditoria é o `result_id`.
 
 ---
 
@@ -84,18 +84,19 @@ Todas validadas inspecionando os **dados reais** do fixture (não assumidas).
 
 ## Qualidade, idempotência, observabilidade, testes
 
-- **Qualidade (3 camadas):** **conserta** na silver (vírgula/`R$`/timezone/caixa); **para** (circuit breaker) quando a run da data pedida não está `COMPLETED` ou há `transaction_id` nulo; **quarentena + conta** (orphan `REVERSED` → `quarantine_settlement` = 1; results com `run_id` órfão ou `merchant_id` nulo → `quarantine_results` = 21; liquidação com moeda divergente da transação interna → `quarantine_settlement` = 0 no fixture, tudo BRL). A quarentena roda **antes** de derivar `silver_settlement_current`, então as tabelas analíticas nunca veem linha quarentenada.
+- **Qualidade (3 camadas):** a silver corrige sujeiras recuperáveis (vírgula decimal, `R$`, timezone, caixa do `merchant_id`). O pipeline para (circuit breaker) quando a run da data pedida não está `COMPLETED` ou há `transaction_id` nulo. O resto vai para quarentena com motivo e é contado: `REVERSED` órfão (`quarantine_settlement` = 1), result com `run_id` órfão ou `merchant_id` nulo (`quarantine_results` = 21) e moeda divergente entre interno e processador (`quarantine_settlement` = 0 no fixture, tudo BRL). A quarentena roda antes de derivar `silver_settlement_current`, então as tabelas analíticas nunca veem linha quarentenada.
 - **Idempotência:** reprocessa a janela `[ref-7d, ref]` substituindo cada partição com `BEGIN; DELETE … WHERE reference_date; INSERT …; COMMIT;` (atômico **por partição**, no mesmo `.duckdb`). Re-rodar a mesma data → contagens idênticas (teste automatizado). Chaves surrogate determinísticas mantêm fatos antigos consistentes com dims reconstruídas.
 - **Observabilidade:** `control_pipeline_run` (run_id, status, rows_read/written/**rejected**, timestamps) — 1ª fonte no troubleshooting. Atomicidade é por-partição (não run-wide); o status reflete o desfecho da execução.
-- **Testes:** **44 testes pytest** — dedup CDC (com delete), parser BR de valores, tolerância, quarentenas, **grão e reconciliação dos fatos**, **ausência de fan-out do CFO**, chaves determinísticas, **idempotência**, exit code não-zero em FAILED, e e2e da CLI.
+- **Testes:** 45 testes pytest cobrindo dedup CDC (com delete), parser BR de valores, tolerância, quarentenas, grão e reconciliação dos fatos, ausência de fan-out no CFO, chaves determinísticas, idempotência, exit code não-zero em FAILED e o e2e da CLI.
 
 ---
 
 ## Extensibilidade — plugar um 2º processador
 
-Schema **canônico de liquidação** (`config.CANONICAL_SETTLEMENT_COLUMNS`). Cada processador =
-**1 adapter** (`adapters/<novo>.py`, implementa `SettlementAdapter.canonical_sql`) +
-**1 entrada em `config.SOURCES`**. Silver e Gold operam só sobre o canônico → **não mudam**.
+Todo adapter devolve o schema canônico de liquidação (`config.CANONICAL_SETTLEMENT_COLUMNS`).
+Cada processador novo precisa de um adapter em `adapters/<novo>.py` (implementando
+`SettlementAdapter.canonical_sql`) e de uma entrada em `config.SOURCES`. Silver e Gold operam
+só sobre o canônico, então não mudam.
 
 > **Resposta concreta:** ~**2 arquivos** (novo adapter + bloco de config) + testes do adapter.
 > Nenhum módulo de transformação a jusante é tocado. Os testes existentes seguem válidos;
@@ -139,7 +140,7 @@ O gargalo **não é volume** — 1,8B linhas/ano cabe num nó (DuckDB faz out-of
 ---
 
 ## O que faria diferente em produção
-dbt para as transformações (testes/docs/linhagem nativos); SCD2 incremental com chaves persistidas; particionamento físico (Hive/Iceberg) em vez de tabela única; checks de DQ como contratos versionados (Great Expectations/Soda) emitindo via OpenLineage; alertas de frescor com SLA.
+Em produção eu moveria as transformações para dbt, ganhando testes, documentação e linhagem nativos. Persistiria as chaves e o histórico SCD2 de forma incremental, particionaria fisicamente os dados (Hive/Iceberg) em vez de manter uma tabela única, e trataria a qualidade como contrato versionado (Great Expectations/Soda) emitindo linhagem via OpenLineage, com alertas de frescor por SLA.
 
 ## Ferramentas de IA utilizadas
-Usei o **Claude (Anthropic)** como par de programação: pesquisa e **verificação com fontes** das capacidades do DuckDB (`MERGE INTO`, `union_by_name`, `QUALIFY`) e de padrões de modelagem (Kimball); geração de scaffolding de código e testes a partir das decisões de design; e revisão. **As decisões de arquitetura e modelagem foram tomadas, validadas contra os dados reais e documentadas por mim** — o spec em [`docs/design/`](docs/design/) registra cada decisão (D1–D12) e o porquê.
+Usei o Claude (Anthropic) como par de programação: pesquisa e verificação com fontes das capacidades do DuckDB (`MERGE INTO`, `union_by_name`, `QUALIFY`) e de padrões de modelagem (Kimball), geração de scaffolding de código e testes a partir das decisões de design, e revisão. As decisões de arquitetura e modelagem foram tomadas, validadas contra os dados reais e documentadas por mim — o spec em [`docs/design/`](docs/design/) registra cada decisão (D1–D12) e o porquê.
