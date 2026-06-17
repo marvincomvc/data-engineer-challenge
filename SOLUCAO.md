@@ -145,4 +145,10 @@ O gargalo não é volume: 1,8B linhas/ano cabem num nó (o DuckDB faz out-of-cor
 Pra caber no escopo do desafio, simplifiquei de propósito: DuckDB num único arquivo (em vez de um data warehouse distribuído), batch diário (sem streaming), SQL inline no `gold.py` (em vez de dbt) e execução por CLI (sem orquestrador). Em produção eu moveria as transformações para dbt, ganhando testes, documentação e linhagem nativos. Persistiria as chaves e o histórico SCD2 de forma incremental, particionaria fisicamente os dados (Hive/Iceberg) em vez de manter uma tabela única, e trataria a qualidade como contrato versionado (Great Expectations/Soda) emitindo linhagem via OpenLineage, com alertas de frescor por SLA.
 
 ## Ferramentas de IA utilizadas
-Usei o Claude (Anthropic) como par de programação: pesquisa e verificação com fontes das capacidades do DuckDB (`MERGE INTO`, `union_by_name`, `QUALIFY`) e de padrões de modelagem (Kimball), geração de scaffolding de código e testes a partir das decisões de design, e revisão. As decisões de arquitetura e modelagem foram tomadas, validadas contra os dados reais e documentadas por mim — o spec em [`docs/design/`](docs/design/) registra cada decisão (D1–D12) e o porquê.
+Usei IA de forma intensiva, mas sempre como ferramenta sob controle, não como piloto automático.
+
+O Claude (Anthropic) foi meu principal par de programação, apoiando pesquisa, scaffolding de código e testes, além de refatorações. Também usei um segundo modelo, Codex/GPT, como revisor adversarial. As decisões de modelagem e as afirmações da documentação só entraram depois de validação cruzada entre os modelos e conferência no código ou nos dados.
+
+Tratei toda saída da IA como rascunho a ser provado. As capacidades do DuckDB (`MERGE INTO`, `union_by_name`, `QUALIFY`) e os padrões Kimball foram checados nas fontes, e cada número ou afirmação foi validado contra os dados reais e o código. Esse processo encontrou e corrigiu overclaims introduzidos durante a escrita, como a descrição de SCD2, que foi ajustada para refletir exatamente o que o código implementa.
+
+As decisões de arquitetura e modelagem (D1–D12) foram minhas, validadas contra o fixture e registradas em [`docs/design/`](docs/design/). A IA acelerou a execução e ajudou a pressionar o raciocínio, mas o julgamento final foi meu.
