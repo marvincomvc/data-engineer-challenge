@@ -31,7 +31,7 @@ docker compose up -d --build
 docker compose exec pipeline python -m pipeline.cli run --reference-date 2025-03-16
 docker compose exec pipeline pytest -v
 ```
-> `docker compose up` sobe o container **ocioso** (`tail -f /dev/null`) — o mesmo padrão do `Makefile` do desafio (`make up` + `make shell`/`make test`/`make run`). O pipeline é disparado via `exec` (acima), o que mantém o container como ambiente de execução reutilizável. *Em hosts sem o plugin `compose`, use `docker-compose` (hífen) ou `make <alvo> COMPOSE=docker-compose`.*
+> O `docker compose up` sobe o container ocioso (`tail -f /dev/null`), seguindo o mesmo padrão do `Makefile` do desafio (`make up` + `make shell`/`make test`/`make run`); o pipeline é disparado via `exec` (acima), o que deixa o container como ambiente de execução reutilizável. Em hosts sem o plugin `compose`, use `docker-compose` (hífen) ou `make <alvo> COMPOSE=docker-compose`.
 
 As queries de exemplo por consumidor estão em [`docs/queries/`](docs/queries/).
 
@@ -64,20 +64,22 @@ Algumas descobertas no fixture guiaram o desenho (provadas, ver `docs/design`): 
 
 ![Arquitetura — Settlement Reconciliation Analytics](docs/architecture.png)
 
-**Módulos** (`pipeline/`): `cli` · `runner` (orquestra) · `config` (schema canônico + fontes) ·
-`adapters/` (base + paysettler) · `bronze` · `silver` (dedup CDC + conformação) ·
-`quality` (DQ) · `control` (watermark/observabilidade) · `gold` (dims/fatos/marts) · `db`.
+Os módulos em `pipeline/` são pequenos e com responsabilidade única: `cli` e `runner` cuidam da
+execução; `config` e `adapters/` (base + paysettler) cuidam das fontes; `bronze`, `silver`
+(dedup CDC + conformação) e `gold` (dims/fatos/marts) são as camadas de transformação; `quality`
+roda os checks de qualidade; `control` é a observabilidade (watermark); e `db` cuida da conexão
+e das transações.
 
 ### Modelo dimensional (gold) — 3 fatos + 3 dimensões + 3 marts
-- **`fact_reconciliation_result`** — *transaction fact*, grão = 1 linha por `reconciliation_result` (degeneradas `result_id`, `transaction_id`, `reconciliation_run_id`). Trilha de auditoria imutável → **Compliance**. Liga ao merchant por join as-was sobre `dim_merchant` (resolve para a versão corrente hoje — ver Limites).
-- **`fact_reconciliation_daily`** — *periodic snapshot*, grão = `reference_date` × merchant × moeda, **colapsado por (transação, run)** (pior severidade vence). Taxas de discrepância → **Operações**.
-- **`fact_settlement_daily`** — *periodic snapshot*, grão = `settled_at` × merchant × moeda, do **feed de liquidação** (1 linha/transação, sem fan-out). Volume liquidado/revertido/líquido + ticket médio → **CFO**.
-- **`dim_merchant`** (estrutura SCD2 + chave determinística; guarda a versão corrente hoje — ver Limites), **`dim_date`** (role-playing: reference/settlement, padded), **`dim_transaction_profile`** (junk: categoria, tolerância, status, flags).
+- `fact_reconciliation_result` — *transaction fact*, grão = 1 linha por `reconciliation_result` (degeneradas `result_id`, `transaction_id`, `reconciliation_run_id`). É a trilha de auditoria imutável e atende Compliance. Liga ao merchant por join as-was sobre `dim_merchant` (resolve para a versão corrente hoje — ver Limites).
+- `fact_reconciliation_daily` — *periodic snapshot*, grão = `reference_date` × merchant × moeda, colapsado por (transação, run) com a pior severidade vencendo. Taxas de discrepância, atende Operações.
+- `fact_settlement_daily` — *periodic snapshot*, grão = `settled_at` × merchant × moeda, vindo do feed de liquidação (1 linha/transação, sem fan-out). Volume liquidado/revertido/líquido e ticket médio, atende CFO.
+- `dim_merchant` (estrutura SCD2 + chave determinística; guarda a versão corrente hoje — ver Limites), `dim_date` (role-playing: reference/settlement, padded) e `dim_transaction_profile` (junk: categoria, tolerância, status, flags).
 
 ### Perguntas que o modelo responde (exemplos rodados no fixture, `--full`)
 **Operações** — taxa de discrepância por dia (9 dias): varia `12,9%–15,8%`; runs com falha/rejeição via `control_pipeline_run` (rejeitadas=22).
 **CFO** — volume liquidado por **dia de liquidação** × moeda × CNAE (todo o feed cai em 2025-03-16); líquido e ticket médio (~R$ 24–27 mil por setor).
-**Compliance** — trilha completa por transação (com CNPJ); contagem de `UNRECONCILED_*`; ranking de CNPJ por `MISMATCHED`. Reconcilia: trilha = results mantidos (816), nada some em silêncio.
+**Compliance** — trilha completa por transação (com CNPJ e `processor_reference`); contagem de `UNRECONCILED_*`; ranking de CNPJ por `MISMATCHED`. Reconcilia: trilha = results mantidos (816), nada some em silêncio.
 *Deliberadamente NÃO responde:* receita/fees (sem dado), tempo real (é batch), relatório regulatório formatado.
 
 ---
@@ -98,9 +100,9 @@ Cada processador novo precisa de um adapter em `adapters/<novo>.py` (implementan
 `SettlementAdapter.canonical_sql`) e de uma entrada em `config.SOURCES`. Silver e Gold operam
 só sobre o canônico, então não mudam.
 
-> **Resposta concreta:** ~**2 arquivos** (novo adapter + bloco de config) + testes do adapter.
-> Nenhum módulo de transformação a jusante é tocado. Os testes existentes seguem válidos;
-> roda-se a nova suíte do adapter.
+> Na prática, plugar um segundo processador toca cerca de 2 arquivos (o adapter novo + o bloco
+> em `config.SOURCES`), mais os testes desse adapter. Nenhum módulo de transformação a jusante é
+> tocado; os testes existentes seguem válidos.
 
 ---
 
@@ -132,10 +134,10 @@ O **core de transformação** (bronze/silver/gold em DuckDB) é o mesmo localmen
 — trocando o armazenamento de um `.duckdb` por Iceberg + engine distribuída quando necessário.
 
 ### 3.2 Troubleshooting — "dashboards sem dados desde sexta"
-Ordem do sintoma à origem: **(1)** `control_pipeline_run` — última run `SUCCESS`? alguma `FAILED`/`RUNNING` travada? **(2)** histórico do orquestrador — a run de sexta rodou, falhou, ou rodou sobre input velho? **(3)** logs por `run_id` + `run_results` localizando o nó parado. **(4)** frescor das fontes (último parquet/arquivo). **(5)** só então CDC: lag do slot do Debezium via `pg_replication_slots` (distância de LSN; `active_pid` nulo = conector caído). **Não** assumir CDC antes de checar o orquestrador.
+Eu iria do sintoma à origem. Começo pela `control_pipeline_run`: a última run terminou `SUCCESS`? tem alguma `FAILED` ou `RUNNING` travada? Depois olho o histórico do orquestrador — a run de sexta chegou a rodar, falhou, ou rodou sobre input velho? Em seguida os logs por `run_id` para localizar o nó parado, e o frescor das fontes (o último parquet/arquivo chegou?). Só então eu olharia o CDC: o lag do slot do Debezium via `pg_replication_slots` (distância de LSN; `active_pid` nulo indica conector caído). O ponto é não assumir que o problema é o CDC antes de checar o orquestrador.
 
 ### 3.3 Escalabilidade (→ ~5M transações/dia, ≈1,8B/ano)
-O gargalo **não é volume** — 1,8B linhas/ano cabe num nó (DuckDB faz out-of-core e já rodou TPC-H em escala de TB). Quebra primeiro em **concorrência** (1 processo escritor) e **serving multiusuário**. Caminho: particionar por data; separar ingestão de serving; migrar de `.duckdb` único para **Iceberg + engine distribuída** (Spark/Trino) ou **DW** (BigQuery/Snowflake/ClickHouse) **quando a concorrência exigir** — mantendo DuckDB para dev/embedded.
+O gargalo não é volume: 1,8B linhas/ano cabem num nó (o DuckDB faz out-of-core e já rodou TPC-H em escala de TB). O que aperta primeiro é a concorrência (um processo escritor) e o serving multiusuário. O caminho é particionar por data, separar ingestão de serving, e migrar o armazenamento de um `.duckdb` único para Iceberg com engine distribuída (Spark/Trino) ou um DW (BigQuery/Snowflake/ClickHouse) quando a concorrência exigir — mantendo o DuckDB para dev/embedded.
 
 ---
 
