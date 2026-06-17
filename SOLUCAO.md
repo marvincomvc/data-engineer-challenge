@@ -142,7 +142,7 @@ O gargalo não é volume: 1,8B linhas/ano cabem num nó (o DuckDB faz out-of-cor
 ---
 
 ## O que faria diferente em produção
-Em produção eu moveria as transformações para dbt, ganhando testes, documentação e linhagem nativos. Persistiria as chaves e o histórico SCD2 de forma incremental, particionaria fisicamente os dados (Hive/Iceberg) em vez de manter uma tabela única, e trataria a qualidade como contrato versionado (Great Expectations/Soda) emitindo linhagem via OpenLineage, com alertas de frescor por SLA.
+Pra caber no escopo do desafio, simplifiquei de propósito: DuckDB num único arquivo (em vez de um data warehouse distribuído), batch diário (sem streaming), SQL inline no `gold.py` (em vez de dbt) e execução por CLI (sem orquestrador). Em produção eu moveria as transformações para dbt, ganhando testes, documentação e linhagem nativos. Persistiria as chaves e o histórico SCD2 de forma incremental, particionaria fisicamente os dados (Hive/Iceberg) em vez de manter uma tabela única, e trataria a qualidade como contrato versionado (Great Expectations/Soda) emitindo linhagem via OpenLineage, com alertas de frescor por SLA.
 
 ## Ferramentas de IA utilizadas
 Usei o Claude (Anthropic) como par de programação: pesquisa e verificação com fontes das capacidades do DuckDB (`MERGE INTO`, `union_by_name`, `QUALIFY`) e de padrões de modelagem (Kimball), geração de scaffolding de código e testes a partir das decisões de design, e revisão. As decisões de arquitetura e modelagem foram tomadas, validadas contra os dados reais e documentadas por mim — o spec em [`docs/design/`](docs/design/) registra cada decisão (D1–D12) e o porquê.
