@@ -4,7 +4,7 @@ Pipeline analítico que transforma os dados do **Settlement Reconciliation Servi
 produtos de dados para **Operações**, **CFO** e **Compliance**. Stack: **Python 3.12 +
 DuckDB + Docker Compose**, arquitetura **medalhão (bronze → silver → gold) + adapters**.
 
-> Documento de design detalhado (decisões e tradeoffs): [`docs/design/2026-06-14-settlement-reconciliation-analytics-design.md`](docs/design/2026-06-14-settlement-reconciliation-analytics-design.md).
+> Documento de design detalhado (decisões e tradeoffs): [`docs/design/decisoes-de-design.md`](docs/design/decisoes-de-design.md).
 
 ---
 
