@@ -1,0 +1,27 @@
+# Docker Compose para o Pipeline de Reconciliação (Fred)
+#
+# Uso:
+#   docker compose -f docker-compose-fred.yml up -d --build
+#   docker compose -f docker-compose-fred.yml run --rm pipeline \
+#     python -m src.cli --reference-date 2025-03-15
+#   docker compose -f docker-compose-fred.yml run --rm pipeline \
+#     pytest tests/ -v
+#
+
+services:
+  pipeline:
+    build: .
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=local
+    volumes:
+      - ./docs/sample-data:/app/docs/sample-data:ro
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./data:/app/data
+      - ./bronze:/app/bronze
+    working_dir: /app
+    entrypoint: ["python", "-m", "src.cli"]
+    # Comando padrão: executa para a data 2025-03-15
+    command: ["--reference-date", "2025-03-15", "--data-path", "docs/sample-data", "--output-path", "data/analytics.db", "--bronze-path", "bronze", "--log-level", "INFO"]

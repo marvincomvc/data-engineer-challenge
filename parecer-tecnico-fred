@@ -1,0 +1,24 @@
+A solução entregue resolve o problema com excelente custo-benefício para desenvolvimento local.Porém, para um 
+cenário produtivo de 5M transações/dia, algumas evoluções arquiteturais seriam necessárias para garantir SLA,
+escalabilidade e manutenibilidade:
+
+Orquestração Orientada a Eventos (em vez de Airflow fixo): Em vez de um scheduler por tempo (ex: rodar todo dia às 8h),
+uma arquitetura event-driven usando notificações do S3 (via SQS/Lambda) iniciaria o pipeline assim que o arquivo Parquet/CSV
+do PaySettler fosse depositado no bucket. Isso reduz latência e custo. Os arquivos brutos, após processados, seriam movidos
+para uma pasta processed/ com subpastas processing_date=YYYY-MM-DD/ (algo assim) para rastreabilidade, garantindo que
+o mesmo arquivo não seja reprocessado acidentalmente.
+
+Uso correto do DuckDB: O DuckDB é um canhão para transformação (ETL/ELT). Ele lê Parquet diretamente, faz joins pesados
+e agregações com altíssima velocidade, substituindo bem o Spark para volumes médios, porém ele é um banco embedded
+e não foi projetado para servir uma camada Gold com Star Schema em produção. Consultas concorrentes de dashboards,
+UPSERTs frequentes e locking de tabelas seriam um gargalo. Nessa evolução, o DuckDB ficaria responsável por preparar
+os dados (camadas Bronze -> futura Silver), e a camada Gold (Star Schema) seria materializada em um OLAP dedicado
+(até um PostgreSQL com boas práticas de particionamento funciona bem) para atender as áreas de negócio com baixa latência
+e alta concorrência de consumos de BIs ou sistemas.
+
+Optei por não implementar camada silver porque isso pode ser feito posteriormente quando existerem outras fontes de dados ou
+entendimento sobre domínios de negócio, pois não tenho claro regras de negócios universalizadas. Portanto, mantive o pipeline
+como Bronze -> Gold, aplicando as regras de qualidade e tratamentos em tempo de execução mesmo.
+
+Essas mudanças não afetam as regras de negócio, apenas desacoplam a execução e o armazenamento final, preparando a
+solução de dados para uma escalabilidade mais saudável.
