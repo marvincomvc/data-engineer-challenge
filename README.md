@@ -55,6 +55,7 @@ Escolha pelo seu objetivo:
 | [`docs/consumption.md`](docs/consumption.md) | Camada de consumo — Parquet, Metabase, SQL, mapeamento por consumidor |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Parte 3.2 — runbook de "segunda de manhã sem dados" |
 | [`docs/scalability.md`](docs/scalability.md) | Parte 3.3 — onde o desenho quebra e o plano de evolução |
+| [`docs/review-decisions.md`](docs/review-decisions.md) | Respostas às revisões (CodeRabbit + Codex): o que foi corrigido, adiado e **por quê** |
 | [`docs/domain-glossary.md`](docs/domain-glossary.md) | Glossário do domínio de reconciliação |
 | [`docs/CHALLENGE.md`](docs/CHALLENGE.md) | Enunciado original (preservado) |
 

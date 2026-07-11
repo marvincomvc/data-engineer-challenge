@@ -188,9 +188,14 @@ compliance, então cada linha fica etiquetada com qual processador liquidou. Col
    num backfill manual (re-run) — não há detecção/re-processamento automático. Produção
    precisaria de ingestão incremental (Debezium→Kafka, landing particionado) + estratégia de
    late-arrival/backfill.
-4. **Sem consciência de câmbio (FX).** A comparação de valores assume mesma moeda; um interno em
-   USD vs. processador em BRL apareceria como MISMATCHED sem conversão. Multi-moeda real exigiria
-   uma camada de FX na tolerância.
+4. **Sem consciência de câmbio (FX).** Um interno em USD vs. processador em BRL é categorizado
+   `MISMATCHED` (moedas diferentes não são comparáveis) e cada moeda é reportada no seu próprio
+   grão; **não há conversão FX** para um total consolidado. Multi-moeda com conversão exigiria uma
+   camada de câmbio.
+
+> Todos os achados das revisões automáticas (CodeRabbit + Codex) — o que foi corrigido, o que foi
+> **deliberadamente adiado e por quê**, com o gatilho concreto de revisão — estão em
+> [`docs/review-decisions.md`](review-decisions.md).
 
 ---
 
