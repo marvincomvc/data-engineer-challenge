@@ -1,6 +1,7 @@
 # Review Decisions — what we fixed, deferred, and why
 
-Two independent AI reviews were run against this solution: **CodeRabbit** (live agent
+Multiple review rounds were run against this solution across two independent tools:
+**CodeRabbit** (two rounds, live agent
 over the working tree) and **Codex** (see [`codex_review.md`](codex_review.md)). This
 document records what we **deliberately did not implement now** and the reasoning —
 so the boundary between "done" and "later" is an explicit decision, not an oversight.
@@ -35,7 +36,7 @@ we chose not to implement them in a local, single-day, filesystem exercise.
 | **Late-arriving corrections / `fct_transaction` staleness outside the 7-day window** (Codex #6) | Requires a persisted watermark + CDC-`_timestamp`-driven incrementality + a late-arrival policy — a real ingestion-architecture change. The daily-batch, fixed-window model is the documented domain behavior. | Corrections/reversals to transactions older than the window must reflect in CFO history before a full refresh. |
 | **Source-freshness checks** (expected business date present, empty file, file received twice, duplicate `processor_reference`) (Codex) | These guard the *real* SFTP/S3 feed; the local fixture is a single static file. Belongs with `dbt source freshness` + an ingestion contract in production. | Onboarding the real PaySettler delivery. |
 | **Execution timeout, SLA/freshness alerting, concurrency controls** (Codex) | Operational concerns of a scheduled production DAG; the local DAG is a demonstrator (SequentialExecutor). | Running on MWAA/Composer with an SLA. |
-| **Tighter dependency pinning / lock file** (Codex) | Minimum-version ranges keep the take-home easy to build; a lock file is a reproducibility hardening step. | CI/CD + reproducible production builds. |
+| **Tighter dependency pinning / lock file** (Codex) | Acknowledged this is more than production hardening — a lock file also improves *evaluator* reproducibility. Deferred only because the pinned Docker image already gives a consistent build for review; a lock file (`uv.lock`/`pip-tools`) is the clean next step. | Any environment where the Docker image isn't the build boundary. |
 
 ### B. Design/scope decisions with a documented upgrade path
 

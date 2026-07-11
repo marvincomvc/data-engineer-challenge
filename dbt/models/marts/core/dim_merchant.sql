@@ -3,9 +3,9 @@
 -- Design note: this is a current-state dimension. Full SCD2 history (tracking
 -- legal_name / cnae changes over time) is a documented extension via a dbt
 -- snapshot keyed on merchant_id + _timestamp — see docs/data-products.md. The
--- audit need for *point-in-time reconciliation* is already met by the immutable
--- fct_reconciliation_result (keyed by run_id + reference_date), so SCD2 here is
--- deferred rather than built.
+-- audit need for *point-in-time reconciliation* is met by the date-keyed
+-- fct_reconciliation_result (grain reference_date + transaction_id; run_id is
+-- provenance, not part of the key), so SCD2 here is deferred rather than built.
 select
     merchant_id,
     legal_name,

@@ -2,7 +2,8 @@
 
 Consumption model: business consumers must NOT read the live warehouse file
 (DuckDB is single-writer — a BI tool holding it open would block the pipeline).
-Instead we publish immutable, partitioned Parquet to a `gold/` zone:
+Instead we publish partitioned Parquet (one partition per reference_date,
+overwritten on re-run) to a `gold/` zone:
 
     gold/
       mart_ops_health/reference_date=2025-03-16/*.parquet

@@ -56,10 +56,9 @@ CREATE TABLE IF NOT EXISTS meta.dq_check_result (
     run_id          VARCHAR,
     reference_date  DATE,
     check_name      VARCHAR,
-    severity        VARCHAR,   -- error | warn
+    severity        VARCHAR,   -- configured severity: error | warn
     passed          BOOLEAN,
-    observed_value  DOUBLE,
-    threshold       DOUBLE,
+    failure_count   BIGINT,    -- rows returned by the failing test (0/NULL when passed)
     checked_at      TIMESTAMPTZ
 );
 """
@@ -132,7 +131,7 @@ def load_dq_results(
                 uid.split(".")[-1],
                 severities.get(uid, "error"),   # configured severity, not run status
                 status == "pass",
-                float(failures) if failures is not None else None,
+                int(failures) if failures is not None else None,   # failing-row count
             )
         )
     if not rows:
@@ -144,8 +143,8 @@ def load_dq_results(
         init(con)
         con.executemany(
             """INSERT INTO meta.dq_check_result
-               (run_id, reference_date, check_name, severity, passed, observed_value, threshold, checked_at)
-               VALUES (?, ?, ?, ?, ?, ?, NULL, now())""",
+               (run_id, reference_date, check_name, severity, passed, failure_count, checked_at)
+               VALUES (?, ?, ?, ?, ?, ?, now())""",
             rows,
         )
     log.info("dq.loaded", extra={"json": {"run_id": run_id, "checks": len(rows)}})

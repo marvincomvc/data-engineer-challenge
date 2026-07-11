@@ -85,6 +85,10 @@ def _build_sources(data_dir: Path) -> None:
         # quote amounts containing commas (pt-BR)
         amt_field = f'"{csv_amt}"' if "," in csv_amt else csv_amt
         lines.append(f"{tid},{m},{amt_field},{proc_ccy},{REFERENCE_DATE}T12:00:00Z,PS-1,SETTLED")
+    # A settlement dated the DAY BEFORE the reference date. It must be scoped OUT
+    # of this run's reconciliation entirely — regression test for date isolation
+    # (the highest-consequence original bug). settled_at 2025-01-09 != 2025-01-10.
+    lines.append("t10-otherday,merch_a,300.00,BRL,2025-01-09T12:00:00Z,PS-2,SETTLED")
     csv_path.write_text("\n".join(lines) + "\n")
     # --- other CDC sources (minimal but schema-complete) --------------------
     con.execute(
@@ -139,6 +143,22 @@ def run_pipeline(warehouse: Path, data_dir: Path, reference_date: str, command: 
         [_dbtbin(), command, "--project-dir", "dbt", "--profiles-dir", "dbt",
          "--vars", f'{{"reference_date": "{reference_date}", "run_id": "test"}}'],
         cwd=REPO_ROOT, env=env, check=True, capture_output=True, text=True,
+    )
+
+
+def run_cli(warehouse: Path, data_dir: Path, args: list[str], check: bool = True):
+    """Run a single `python -m pipeline ...` command; returns CompletedProcess."""
+    env = {
+        **os.environ,
+        "DATA_PATH": str(data_dir),
+        "DUCKDB_PATH": str(warehouse),
+        "GOLD_PATH": str(warehouse.parent / "gold"),
+        "PYTHONPATH": str(REPO_ROOT / "src"),
+        "PATH": (f"{VENV_DIR}/bin:" if VENV_DIR else "") + os.environ.get("PATH", ""),
+    }
+    return subprocess.run(
+        [_pybin(), "-m", "pipeline", *args],
+        cwd=REPO_ROOT, env=env, check=check, capture_output=True, text=True,
     )
 
 

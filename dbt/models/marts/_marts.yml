@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: fct_reconciliation_result
-    description: Immutable audit spine. Grain = (reference_date, transaction_id).
+    description: Current-state reconciliation spine. Grain = (reference_date, transaction_id).
     columns:
       - name: transaction_id
         tests:

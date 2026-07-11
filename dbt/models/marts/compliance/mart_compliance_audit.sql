@@ -1,4 +1,4 @@
--- COMPLIANCE: fully-attributed, immutable audit trail.
+-- COMPLIANCE: fully-attributed, current-state audit view.
 -- Answers: "for any transaction, what was decided, when, by which run, for which
 -- merchant (with legal identity)?". One row per (reference_date, transaction_id),
 -- enriched with merchant identity and run provenance for regulator-ready lookups.

@@ -1,102 +1,80 @@
-# Codex Review
+# Codex Review — Post-fix Reassessment
 
-Overall, this is a strong, polished take-home with good architecture, documentation, tests, and developer experience. However, several production-facing guarantees in the documentation are not actually implemented. I would rate it “promising senior-level submission, but changes requested” rather than approve as-is.
+The second review is much improved. The primary correctness issues—date scoping, currency grain, orchestration correlation, and run-header fan-out—are fixed, and the deferrals are generally well reasoned for a take-home.
 
-## Major findings
+I would still request a small follow-up because the new DQ implementation has an important failure-path bug.
 
-### 1. High — Reconciliation does not scope processor records to the requested date
+## Findings
 
-[`int_reconciliation.sql`](../dbt/models/intermediate/int_reconciliation.sql#L18) reads every row from `stg_settlements`, while only internal transactions are filtered by `reference_date`.
+### 1. High — Failed dbt tests are not written to `meta.dq_check_result`
 
-Consequences:
+In [`cli.py`](../src/pipeline/cli.py#L93), the code raises immediately when dbt returns non-zero:
 
-- `make run REFERENCE_DATE=2025-03-13` reconciles the March 16 PaySettler file against March 13 internal data.
-- Backfills reuse the currently mounted CSV instead of the file belonging to that business date.
-- With multiple daily files or processors, every run could include historical/future settlements.
+```python
+if result.returncode != 0:
+    raise RuntimeError(...)
+```
 
-Filter settlements by `cast(settled_at as date) = reference_date`, and ideally persist an explicit `reference_date`/file identity during ingestion. Add a test containing processor rows from at least two dates.
+`load_dq_results()` is called afterward, so it only runs when dbt succeeds. A blocking `severity: error` test causes `dbt test` or `dbt build` to return non-zero; precisely those failed checks are therefore never persisted.
 
-### 2. High — CFO output does not actually have a per-currency grain
+This contradicts the troubleshooting instructions in [`troubleshooting.md`](troubleshooting.md#L50), which tell the operator to query `meta.dq_check_result` to identify the gate that blocked publication.
 
-[`mart_cfo_volume.sql`](../dbt/models/marts/finance/mart_cfo_volume.sql#L8) claims a grain of `reference_date × currency`, but groups only by `reference_date` and selects `max(currency_hint)`.
+Load `run_results.json` before raising, preferably in a `try/finally`, while preserving the non-zero pipeline result. Add an integration test that deliberately violates a blocking dbt test and confirms:
 
-A day containing BRL and USD is reported as one arbitrary currency with both amounts combined. Processor-only rows are also silently assumed to be BRL.
+- The pipeline exits non-zero.
+- The dbt stage is recorded as `FAILED`.
+- The failed check appears in `meta.dq_check_result`.
 
-Group by a row-level currency value, propagate processor currency into the reconciliation fact, and explicitly handle cross-currency matches. Add a two-currency fixture and a uniqueness test on `(reference_date, currency)`.
+### 2. Medium — DQ metrics do not contain the advertised observed value or threshold
 
-### 3. High — `meta.dq_check_result` is never populated
+[`run_registry.py`](../src/pipeline/run_registry.py#L113) records dbt’s `failures` field as `observed_value` and always writes `threshold = NULL`.
 
-The table is created in [`run_registry.py`](../src/pipeline/run_registry.py#L53), but there is no insertion into it anywhere in the repository. Nevertheless, the README, architecture, troubleshooting guide, and solution claim every DQ result is recorded there.
+For a mismatch-rate test, `failures` is normally the number of rows returned by the test—often `1`—rather than the actual mismatch rate. Consequently, the table cannot answer “by how much did the rate exceed 10%?” despite its schema and documentation suggesting that it can.
 
-This makes the primary documented troubleshooting query return no evidence.
+Options:
 
-Either:
+- Rename the field to `failure_count` and stop presenting it as the measured business metric, or
+- Make anomaly tests emit/store their actual observed metric and configured threshold.
 
-- Parse dbt’s `run_results.json` after tests and write normalized results into the table, or
-- Remove the claim and make dbt artifacts/logs the documented source of truth.
+The first option is perfectly adequate for the challenge.
 
-This behavior needs an integration test.
+### 3. Low — Some “immutable audit” claims remain
 
-### 4. High — The Airflow observability path does not match the advertised design
+The decision log says the audit was reframed as current-state, and [`data-products.md`](data-products.md#L18) now explains this well. However, stale claims remain:
 
-The DAG invokes dbt directly in [`reconciliation_dag.py`](../airflow/dags/reconciliation_dag.py#L56), bypassing `cmd_dbt` and its stage registry. Ingest and publish independently invoke the CLI, which generates a new UUID each time in [`cli.py`](../src/pipeline/cli.py#L89).
+- [`_marts.yml`](../dbt/models/marts/_marts.yml#L5): “Immutable audit spine”
+- [`mart_compliance_audit.sql`](../dbt/models/marts/compliance/mart_compliance_audit.sql#L1): “immutable audit trail”
+- [`dim_merchant.sql`](../dbt/models/marts/core/dim_merchant.sql#L6): says the audit requirement is met by an immutable fact and incorrectly describes its key as including `run_id`
 
-Therefore, one DAG execution does not share one pipeline `run_id`, and `meta.pipeline_run` lacks the Airflow dbt stages.
+These should say “current-state reconciliation spine/audit view.” This is especially worth correcting because [`review-decisions.md`](review-decisions.md#L72) explicitly promises that unsupported claims were removed.
 
-Pass Airflow’s run ID into every CLI stage and add a CLI `--run-id` option. Have the DAG call the same registered stage commands used locally.
+### 4. Low — The date-scoping fix lacks its proposed regression test
 
-### 5. Medium-high — The “immutable audit spine” is mutable
+The implementation in [`int_reconciliation.sql`](../dbt/models/intermediate/int_reconciliation.sql#L38) is correct, but the controlled CSV fixture still appears to contain only the target business date.
 
-[`fct_reconciliation_result.sql`](../dbt/models/marts/core/fct_reconciliation_result.sql#L7) uses `delete+insert` keyed by `(reference_date, transaction_id)`. A rerun overwrites the prior category, amounts, `run_id`, and `_loaded_at`.
+Add one processor record from the previous or following day and assert it is absent from the selected reference date. Date isolation was the most consequential original output bug, so it deserves a direct regression test.
 
-That is idempotent current-state processing, but not immutable audit history. Compliance cannot reconstruct what the first run decided after a corrected rerun.
+## Assessment of the deferrals
 
-Choose and document one of these designs:
+The deferrals in [`review-decisions.md`](review-decisions.md) are mostly defensible:
 
-- Current result fact plus an append-only run-versioned audit fact keyed by `(run_id, transaction_id)`, or
-- A versioned fact with an `is_current` projection for Ops/CFO.
+- Append-only audit history: reasonable if the current-state limitation remains explicit.
+- SCD2 merchant history: reasonable and clearly scoped.
+- Late-arrival handling: reasonable for a local exercise, though it remains a real CFO correctness limitation.
+- Source freshness and production DAG controls: reasonable production concerns.
+- Cross-processor collision handling: reasonable until a second processor is introduced.
+- Whole-partition replacement and publish cleanup: acceptable given the fixture assumptions, with appropriate revisit triggers.
 
-### 6. Medium-high — Historical transactions can become stale
+One wording adjustment: calling dependency locking merely “production hardening” understates its value for a take-home. A lock file improves evaluator reproducibility too, although I would not block the submission over it.
 
-On incremental runs, [`fct_transaction.sql`](../dbt/models/marts/core/fct_transaction.sql#L25) refreshes only transactions whose `created_at` is inside the current seven-day window.
+## Verification
 
-If an older transaction is updated, corrected, reversed, or arrives late, staging sees the change but `fct_transaction` never applies it. CFO history can therefore remain incorrect until a full refresh.
+The updated Dockerized test suite passes:
 
-Drive incrementality from `updated_at` or CDC `_timestamp`, with a persisted watermark and late-arrival policy.
+```text
+25 passed in 124.34s
+```
 
-### 7. Medium — Joins to reconciliation runs can duplicate marts
+The fixed output logic looks sound, and the decision document materially improves the submission by showing deliberate engineering judgment rather than silently ignoring review feedback.
 
-Both [`mart_ops_health.sql`](../dbt/models/marts/ops/mart_ops_health.sql#L37) and [`mart_compliance_audit.sql`](../dbt/models/marts/compliance/mart_compliance_audit.sql#L26) join run metadata only on `reference_date`.
-
-Multiple attempts for one date—normal in production—will duplicate the daily Ops row and every Compliance record. The current sample happens not to expose it.
-
-Select a canonical run per date or carry the precise source `run_id` through the fact and join on it.
-
-### 8. Medium — Ops cannot report pipeline failures as documented
-
-`mart_ops_health.run_status` comes from the source service’s `reconciliation_runs`, not `meta.pipeline_run`. In addition, a failed dbt run cannot publish an updated mart.
-
-So the documented question “which run failed?” is not answered for this pipeline. Provide a separate operational run-health product sourced from `meta.pipeline_run`, or have the BI layer query operational metadata directly.
-
-## Other recommendations
-
-- Add source freshness checks for the expected PaySettler business date, empty files, duplicate processor references, and files received twice.
-- Test behavior for `REVERSED`, conflicting merchant IDs, conflicting currencies, duplicate processor rows with equal timestamps, malformed timestamps, negative amounts, and future settlements.
-- Define how two processors claiming the same `transaction_id` should be handled. “Latest settlement wins” may hide a serious collision; quarantining or flagging it is safer.
-- Replace `retry_delay=None` in the Airflow DAG with an explicit delay and add execution timeout, SLA/freshness alerting, and concurrency controls.
-- Pin dependency versions more tightly and produce a lock file. The open-ended minimum versions reduce reproducibility.
-- Remove `pip install ... || true` from the [`Dockerfile`](../Dockerfile#L12); silently ignoring installation failure hides broken builds.
-- The documentation says “14 tests verdes,” but the current suite contains 23 tests. Small issue, but it weakens the otherwise careful documentation.
-
-## What was done particularly well
-
-- Excellent repository navigation and requirement traceability.
-- Clear separation of Bronze, staging, reconciliation, facts, marts, and publication.
-- Good controlled fixtures for category, tolerance, CDC, idempotency, and publication behavior.
-- Sensible use of blocking versus warning dbt tests.
-- The raw-string CSV landing and deterministic monetary cleanup are good decisions.
-- Strong discussion of scaling limits, late arrivals, SCD2, PII, and DuckDB’s single-writer constraint.
-- Publishing Parquet products instead of exposing the live DuckDB warehouse is a thoughtful local serving model.
-- The required Docker environment works: I ran the suite inside Compose and got **23 passed in 106.44s**. A host-side run failed because the host has an unrelated dbt Cloud CLI shadowing dbt Core; that is an environment issue, not a repository test failure.
-
-The highest-value fixes before submission would be processor date isolation, CFO currency correctness, real DQ metadata persistence, and consistent Airflow run correlation. Those are the items most likely to come up in the technical interview.
+Final verdict: nearly ready. Fix the failed-DQ persistence path and remove the remaining immutable-audit claims; the other items can remain recommendations.

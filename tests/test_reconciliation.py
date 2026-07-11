@@ -41,6 +41,12 @@ def test_tolerance_boundary_is_matched(built):
     assert _categories(built)["t2-tolerance"] == "MATCHED"
 
 
+def test_other_day_settlement_is_scoped_out(built):
+    # a processor row settled the day BEFORE reference_date must not be reconciled
+    # on this date at all (not even UNRECONCILED_PROCESSOR) — date-isolation regression.
+    assert "t10-otherday" not in _categories(built)
+
+
 def test_out_of_window_internal_is_processor_orphan(built):
     # internal created before the 7-day window -> processor row is an orphan.
     assert _categories(built)["t6-outofwindow"] == "UNRECONCILED_PROCESSOR"

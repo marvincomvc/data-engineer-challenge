@@ -24,7 +24,7 @@ where status = 'FAILED'
 order by started_at desc;
 
 -- Q3. Data-quality gate outcomes for the latest run: what blocked vs. warned?
-select check_name, severity, passed, observed_value
+select check_name, severity, passed, failure_count
 from meta.dq_check_result
 where run_id = (select run_id from meta.pipeline_run order by started_at desc limit 1)
 order by passed, severity;

@@ -50,7 +50,7 @@ from bronze.raw_paysettler group by 1;
 ## 4. `dbt test` blocked publish — an integrity gate fired
 
 ```sql
-select check_name, severity, observed_value, threshold, checked_at
+select check_name, severity, failure_count, checked_at
 from meta.dq_check_result
 where reference_date >= current_date - 4 and passed = false
 order by checked_at desc;
