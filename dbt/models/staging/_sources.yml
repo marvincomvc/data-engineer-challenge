@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Raw landing zone, loaded by the Python ingest (src/pipeline/ingest).
+    schema: bronze
+    tables:
+      - name: raw_transactions
+        description: Internal transactions, CDC extract (two batches, schema drift on payment_method).
+      - name: raw_paysettler
+        description: PaySettler settlement file, landed as raw strings.
+      - name: raw_reconciliation_runs
+        description: Historical reconciliation run headers (CDC).
+      - name: raw_reconciliation_results
+        description: Historical categorized results (CDC) — cross-check reference only.
+      - name: raw_enterprise_company
+        description: Merchant master data (CDC).

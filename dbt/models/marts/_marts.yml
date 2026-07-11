@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: fct_reconciliation_result
+    description: Immutable audit spine. Grain = (reference_date, transaction_id).
+    columns:
+      - name: transaction_id
+        tests:
+          - not_null
+      - name: category
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                ["MATCHED", "MISMATCHED", "UNRECONCILED_PROCESSOR", "UNRECONCILED_INTERNAL"]
+      - name: merchant_id
+        tests:
+          - relationships:
+              to: ref('dim_merchant')
+              field: merchant_id
+              config:
+                severity: warn   # orphan merchant ids are a data issue, not a stop-the-world
+
+  - name: fct_transaction
+    columns:
+      - name: transaction_id
+        tests: [not_null, unique]
+      - name: currency
+        tests:
+          - accepted_values:
+              values: ["BRL", "USD", "EUR"]
+
+  - name: dim_merchant
+    columns:
+      - name: merchant_id
+        tests: [not_null, unique]
+
+  - name: dim_category
+    columns:
+      - name: category
+        tests: [not_null, unique]
+
+  - name: dim_date
+    columns:
+      - name: date_day
+        tests: [not_null, unique]
+
+  - name: mart_ops_health
+    columns:
+      - name: reference_date
+        tests: [not_null, unique]
+
+  - name: mart_cfo_volume
+    columns:
+      - name: reference_date
+        tests: [not_null]

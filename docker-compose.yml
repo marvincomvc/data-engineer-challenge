@@ -1,13 +1,87 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Core pipeline. `docker compose up -d` brings up just this — a lightweight
+  # container with DuckDB + dbt. Run the pipeline with `make run` / `make shell`.
+  # ---------------------------------------------------------------------------
   pipeline:
     build: .
     environment:
       - PYTHONUNBUFFERED=1
       - DATA_PATH=/app/docs/sample-data
+      - DUCKDB_PATH=/app/warehouse/settlement.duckdb
       - LOG_LEVEL=INFO
       - ENVIRONMENT=local
     volumes:
       - ./docs/sample-data:/app/docs/sample-data:ro
+      - ./dbt:/app/dbt
+      - ./src:/app/src
       - ./scripts:/app/scripts
       - ./tests:/app/tests
+      - ./sql:/app/sql
+      - warehouse:/app/warehouse
+      - ./gold:/app/gold          # published data products (host-visible + shared with BI)
     command: tail -f /dev/null
+
+  # ---------------------------------------------------------------------------
+  # Optional orchestration layer. Enable with:  docker compose --profile airflow up
+  # Uses airflow standalone (SequentialExecutor) which matches DuckDB's
+  # single-writer model — one task writes the warehouse file at a time. In
+  # production this becomes LocalExecutor/Celery + Postgres (see docs/scalability.md).
+  # ---------------------------------------------------------------------------
+  airflow:
+    image: apache/airflow:2.9.3-python3.12
+    profiles: ["airflow"]
+    depends_on:
+      - pipeline
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - _PIP_ADDITIONAL_REQUIREMENTS=dbt-duckdb>=1.9
+      - PIPELINE_REPO=/opt/airflow/repo
+      - DATA_PATH=/opt/airflow/repo/docs/sample-data
+      - DUCKDB_PATH=/opt/airflow/repo/warehouse/settlement.duckdb
+      - PYTHONPATH=/opt/airflow/repo/src
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./:/opt/airflow/repo
+      - warehouse:/opt/airflow/repo/warehouse
+    ports:
+      - "8080:8080"
+    command: standalone
+
+  # ---------------------------------------------------------------------------
+  # BI / consumption layer. Enable with:  docker compose --profile bi up
+  # Metabase reads the PUBLISHED data products (gold/serving.duckdb → views over
+  # Parquet), never the live warehouse — so it never contends with the writer.
+  # Run `make run` first to produce gold/, then open http://localhost:3000.
+  #
+  # metabase-init fetches the community DuckDB driver. Versions drift; override
+  # DUCKDB_DRIVER_URL if the pinned release 404s (see docs/consumption.md).
+  # ---------------------------------------------------------------------------
+  metabase-init:
+    image: curlimages/curl:8.8.0
+    profiles: ["bi"]
+    volumes:
+      - metabase-plugins:/plugins
+    command: >
+      -fsSL
+      -o /plugins/duckdb.metabase-driver.jar
+      ${DUCKDB_DRIVER_URL:-https://github.com/AlexR2D2/metabase_duckdb_driver/releases/download/0.3.3/duckdb.metabase-driver.jar}
+
+  metabase:
+    image: metabase/metabase:v0.52.8
+    profiles: ["bi"]
+    depends_on:
+      metabase-init:
+        condition: service_completed_successfully
+    environment:
+      - MB_PLUGINS_DIR=/plugins
+    volumes:
+      - metabase-plugins:/plugins
+      - ./gold:/gold:ro           # read the published products read-only
+    ports:
+      - "3000:3000"
+
+volumes:
+  warehouse:
+  metabase-plugins:

@@ -1,0 +1,10 @@
+settlement:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      # Same warehouse file the Python ingest writes Bronze into. DuckDB is
+      # single-writer, so nothing else may hold this handle while dbt runs.
+      path: "{{ env_var('DUCKDB_PATH', 'warehouse/settlement.duckdb') }}"
+      schema: main
+      threads: 4

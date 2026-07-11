@@ -7,6 +7,13 @@ gold/
 *.duckdb.wal
 _delta_log/
 
+# Warehouse + dbt build artifacts + published products
+warehouse/
+gold/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -218,3 +225,6 @@ __marimo__/
 # local tooling / internal
 .claude/
 docs/evaluation/
+
+# dbt local user file
+dbt/.user.yml

@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: stg_transactions
+    description: Internal transactions, current state after CDC collapse.
+    columns:
+      - name: transaction_id
+        description: Natural key.
+        tests:
+          - not_null       # integrity -> blocks
+          - unique         # CDC collapse must yield one row per txn
+      - name: amount
+        tests:
+          - not_null
+      - name: currency
+        tests:
+          - accepted_values:
+              values: ["BRL", "USD", "EUR"]
+
+  - name: stg_paysettler
+    description: Cleaned PaySettler settlement file.
+    columns:
+      - name: transaction_id
+        tests:
+          - not_null
+      - name: amount
+        description: Unparseable amounts become NULL and are caught here (blocks).
+        tests:
+          - not_null
+      - name: status
+        tests:
+          - accepted_values:
+              values: ["SETTLED", "REVERSED"]
+
+  - name: stg_reconciliation_runs
+    columns:
+      - name: run_id
+        tests: [not_null, unique]
+      - name: status
+        tests:
+          - accepted_values:
+              values: ["IN_PROGRESS", "COMPLETED", "FAILED"]
+
+  - name: stg_enterprise_company
+    columns:
+      - name: merchant_id
+        tests: [not_null, unique]
