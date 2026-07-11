@@ -21,10 +21,12 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "event": record.getMessage(),
         }
-        # Structured context passed via `extra={"json": {...}}`.
+        # Structured context passed via `extra={"json": {...}}`. Canonical fields
+        # (ts/level/logger/event) are protected so context can't overwrite them.
         ctx = getattr(record, "json", None)
         if isinstance(ctx, dict):
-            payload.update(ctx)
+            reserved = {"ts", "level", "logger", "event"}
+            payload.update({k: v for k, v in ctx.items() if k not in reserved})
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)

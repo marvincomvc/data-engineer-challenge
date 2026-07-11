@@ -5,7 +5,11 @@ with src as (
 ranked as (
     select
         *,
-        row_number() over (partition by id order by _timestamp desc nulls last) as _rn
+        -- created_at as a secondary tie-breaker on equal _timestamp (the CDC
+        -- extract lacks a true source sequence/offset — see docs/review-decisions.md)
+        row_number() over (
+            partition by id order by _timestamp desc nulls last, created_at desc nulls last
+        ) as _rn
     from src
 )
 select

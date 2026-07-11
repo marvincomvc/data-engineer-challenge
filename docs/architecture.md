@@ -136,7 +136,7 @@ becomes CDC (Debezium→Kafka) instead of a batch parquet extract. The medallion
 the reconciliation logic, the idempotency strategy, and the DQ gates are unchanged — only
 the substrate scales (see [`scalability.md`](scalability.md)).
 
-## Key design decisions (full ADRs in the DESIGN doc)
+## Key design decisions (see [`review-decisions.md`](review-decisions.md) for the full trail)
 
 | Decision | Why |
 |---|---|

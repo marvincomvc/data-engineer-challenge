@@ -37,10 +37,16 @@ def test_ptbr_and_comma_amounts_repaired(controlled_warehouse):
             "select count(*) from main.stg_paysettler where amount is null"
         ).fetchone()[0]
         assert nulls == 0
+        # pt-BR "R$ 75,00" -> 75.00
         val = con.execute(
             "select amount from main.stg_paysettler where transaction_id = 't5-processor'"
         ).fetchone()[0]
         assert float(val) == 75.00
+        # comma-decimal "100,02" -> 100.02 (assert the value, not just non-null)
+        val3 = con.execute(
+            "select amount from main.stg_paysettler where transaction_id = 't3-mismatch'"
+        ).fetchone()[0]
+        assert float(val3) == 100.02
     finally:
         con.close()
 

@@ -97,6 +97,7 @@ Full reasoning in [`docs/data-products.md`](docs/data-products.md).
 
 ## Design trail
 
-The full reasoning (brainstorm → requirements → design, with ADRs and the
-36-file manifest) is in `.claude/sdd/features/` —
-`BRAINSTORM_`, `DEFINE_`, `DESIGN_SETTLEMENT_RECONCILIATION.md`.
+The committed design/decision reasoning lives in [`docs/review-decisions.md`](docs/review-decisions.md)
+(what was built, deferred, and why) and across the `docs/` set. A more detailed
+spec-driven trail (brainstorm → requirements → design) was produced locally under
+`.claude/sdd/` but is intentionally **gitignored** (working notes, not part of the deliverable).

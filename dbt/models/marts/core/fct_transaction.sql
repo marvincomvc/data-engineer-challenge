@@ -23,8 +23,14 @@ select
     updated_at
 from {{ ref('stg_transactions') }}
 {% if is_incremental() %}
--- refresh only rows created within the current reconciliation window
+-- refresh rows created OR updated within the window, so a late status change
+-- (e.g. PENDING -> COMPLETED) on an older transaction is still pulled in.
+-- (Full CDC-watermark incrementality remains a documented extension —
+-- see docs/review-decisions.md.)
 where cast(created_at as date)
-      between (date '{{ var("reference_date") }}' - {{ var("reconciliation_window_days") }})
-          and  date '{{ var("reference_date") }}'
+        between (date '{{ var("reference_date") }}' - {{ var("reconciliation_window_days") }})
+            and  date '{{ var("reference_date") }}'
+   or cast(updated_at as date)
+        between (date '{{ var("reference_date") }}' - {{ var("reconciliation_window_days") }})
+            and  date '{{ var("reference_date") }}'
 {% endif %}

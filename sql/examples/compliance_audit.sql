@@ -1,6 +1,7 @@
 -- ============================================================================
 -- COMPLIANCE — audit trail & traceability
--- Run: duckdb warehouse/settlement.duckdb < sql/examples/compliance_audit.sql
+-- Run (against the serving catalog, per docs/consumption.md; `make run` first):
+--   duckdb gold/serving.duckdb < sql/examples/compliance_audit.sql
 -- ============================================================================
 
 -- Q1. Full audit record for a single transaction: what was decided, for which

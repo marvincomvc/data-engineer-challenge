@@ -17,7 +17,11 @@ by_date as (
         count(*) filter (where category = 'UNRECONCILED_PROCESSOR')       as unreconciled_processor,
         count(*) filter (where category = 'UNRECONCILED_INTERNAL')        as unreconciled_internal,
         count(*) filter (where category <> 'MATCHED')                     as needs_investigation,
-        sum(difference) filter (where category = 'MISMATCHED')            as mismatch_exposure
+        -- same-currency mismatches only (cross-currency diffs aren't comparable);
+        -- coalesce keeps a clean day at 0 rather than NULL
+        coalesce(sum(difference) filter (
+            where category = 'MISMATCHED'
+              and internal_currency is not distinct from processor_currency), 0) as mismatch_exposure
     from results
     group by reference_date
 ),

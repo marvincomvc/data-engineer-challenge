@@ -33,6 +33,7 @@ models:
         tests: [not_null, unique]
       - name: currency
         tests:
+          - not_null
           - accepted_values:
               values: ["BRL", "USD", "EUR"]
 
@@ -60,3 +61,15 @@ models:
     columns:
       - name: reference_date
         tests: [not_null]
+
+  - name: mart_compliance_audit
+    description: Regulator-facing per-transaction audit view (grain reference_date × transaction_id).
+    columns:
+      - name: transaction_id
+        tests: [not_null]
+      - name: reference_date
+        tests: [not_null]
+      - name: category
+        tests:
+          - accepted_values:
+              values: ["MATCHED", "MISMATCHED", "UNRECONCILED_PROCESSOR", "UNRECONCILED_INTERNAL"]

@@ -1,6 +1,7 @@
 -- ============================================================================
 -- OPERATIONS — reconciliation health
--- Run: duckdb warehouse/settlement.duckdb < sql/examples/ops_health.sql
+-- Run (against the serving catalog, per docs/consumption.md; `make run` first):
+--   duckdb gold/serving.duckdb < sql/examples/ops_health.sql
 -- ============================================================================
 
 -- Q1. Is the discrepancy rate rising? Daily mismatch + unreconciled rates, with

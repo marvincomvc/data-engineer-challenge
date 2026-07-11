@@ -16,6 +16,14 @@
     try_cast(
         case
             when {{ col }} is null then null
+            -- Reject strings that are not a valid money value: strip an optional
+            -- leading currency token, then require the remainder to be digits +
+            -- separators + sign only. So "abc123.45" -> NULL (hits the not_null
+            -- gate) instead of silently parsing to 123.45.
+            when not regexp_full_match(
+                regexp_replace(trim({{ col }}), '^(R\$|\$|BRL|USD|EUR)\s*', ''),
+                '^-?[0-9.,]+$'
+            ) then null
             -- both separators -> pt-BR: '.' thousands, ',' decimal
             when strpos({{ col }}, '.') > 0 and strpos({{ col }}, ',') > 0
                 then replace(replace(regexp_replace({{ col }}, '[^0-9.,-]', '', 'g'), '.', ''), ',', '.')

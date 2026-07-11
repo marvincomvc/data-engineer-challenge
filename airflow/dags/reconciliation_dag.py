@@ -16,11 +16,9 @@ from airflow.operators.bash import BashOperator
 
 REPO = os.environ.get("PIPELINE_REPO", "/opt/airflow/repo")
 
-# reference_date resolves at render time from the run's logical date, or an
+# reference_date resolves at render time from the run's logical date (ds), or an
 # operator-supplied dag_run.conf override for manual backfills.
-REFERENCE_DATE = (
-    "{{ dag_run.conf.get('reference_date', ds) if dag_run else ds }}"
-)
+REFERENCE_DATE = "{{ dag_run.conf.get('reference_date', ds) }}"
 
 COMMON_ENV = {
     "DATA_PATH": os.environ.get("DATA_PATH", f"{REPO}/docs/sample-data"),

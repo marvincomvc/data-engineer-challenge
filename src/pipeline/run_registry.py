@@ -65,6 +65,9 @@ CREATE TABLE IF NOT EXISTS meta.dq_check_result (
 
 
 def init(con: duckdb.DuckDBPyConnection) -> None:
+    # the meta schema may not exist yet when a stage runs standalone (dbt-test /
+    # publish) on a fresh warehouse, so create it before the tables.
+    con.execute("CREATE SCHEMA IF NOT EXISTS meta")
     con.execute(DDL)
 
 
@@ -107,14 +110,18 @@ def load_dq_results(
         log.info("dq.no_run_results", extra={"json": {"path": str(path)}})
         return 0
 
-    # configured severity per test node (default 'error' — dbt's default)
+    # configured severity + readable name per test node, from manifest.
+    # (uid.split('.')[-1] yields the hash suffix for GENERIC tests, so use the
+    # manifest 'name' for a human-readable check_name.)
     severities: dict[str, str] = {}
+    names: dict[str, str] = {}
     manifest_path = path.parent / "manifest.json"
     if manifest_path.exists():
         nodes = json.loads(manifest_path.read_text()).get("nodes", {})
         for uid, node in nodes.items():
             if uid.startswith("test."):
                 severities[uid] = str(node.get("config", {}).get("severity", "error")).lower()
+                names[uid] = node.get("name") or uid.split(".")[-1]
 
     results = json.loads(path.read_text()).get("results", [])
     rows = []
@@ -128,8 +135,8 @@ def load_dq_results(
             (
                 run_id,
                 reference_date,
-                uid.split(".")[-1],
-                severities.get(uid, "error"),   # configured severity, not run status
+                names.get(uid, uid.split(".")[-1]),   # readable name, not the hash
+                severities.get(uid, "error"),         # configured severity, not run status
                 status == "pass",
                 int(failures) if failures is not None else None,   # failing-row count
             )
@@ -141,6 +148,8 @@ def load_dq_results(
 
     with connect(duckdb_path) as con:
         init(con)
+        # idempotent: a retried dbt test/build must not stack duplicate rows
+        con.execute("DELETE FROM meta.dq_check_result WHERE run_id = ?", [run_id])
         con.executemany(
             """INSERT INTO meta.dq_check_result
                (run_id, reference_date, check_name, severity, passed, failure_count, checked_at)

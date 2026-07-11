@@ -8,15 +8,15 @@
 -- alongside this one — see docs/data-products.md. The run_id + _loaded_at
 -- columns record which run last wrote each row.
 --
--- Idempotency: incremental + delete+insert on the natural key. A re-run replaces
--- the rows for the (reference_date, transaction_id) keys present in the new batch,
--- so it can never duplicate. Caveat: if a re-run's key set SHRINKS (a txn drops
--- out of the date), the stale row is not removed — see docs/review-decisions.md;
--- switch to insert_overwrite by reference_date if strict slice replacement is needed.
+-- Idempotency: incremental + delete+insert keyed by reference_date, so a re-run
+-- deletes the WHOLE date slice and re-inserts it. This replaces the full partition
+-- (not just the keys in the new batch), so a corrected re-run that DROPS a
+-- transaction no longer leaves a stale row. Grain (reference_date, transaction_id)
+-- stays enforced by the assert_fct_grain_unique test.
 {{
     config(
         materialized='incremental',
-        unique_key=['reference_date', 'transaction_id'],
+        unique_key='reference_date',
         incremental_strategy='delete+insert'
     )
 }}

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import date
@@ -118,13 +119,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     cfg = CONFIG
     run_id = args.run_id or new_run_id()
-    reference_date = _resolve_reference_date(cfg, args.reference_date)
-    log.info(
-        "pipeline.start",
-        extra={"json": {"command": args.command, "reference_date": reference_date, "run_id": run_id}},
-    )
-
     try:
+        # run_id is interpolated into SQL (lineage column, dbt var); constrain it to
+        # a safe charset so a caller-supplied --run-id can't break/inject SQL.
+        if not re.fullmatch(r"[A-Za-z0-9_.:+\-]+", run_id):
+            raise ValueError(f"invalid run_id (allowed: alphanumerics . _ : + -): {run_id!r}")
+        reference_date = _resolve_reference_date(cfg, args.reference_date)
+        log.info(
+            "pipeline.start",
+            extra={"json": {"command": args.command, "reference_date": reference_date, "run_id": run_id}},
+        )
         if args.command == "ingest":
             cmd_ingest(cfg, reference_date, run_id)
         elif args.command == "dbt-run":

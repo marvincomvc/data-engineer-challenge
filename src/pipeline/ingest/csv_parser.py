@@ -19,8 +19,9 @@ def read_raw_relation(con: duckdb.DuckDBPyConnection, csv_path: Path) -> str:
     all_varchar=true preserves malformed numerics/timestamps so the integrity
     gate in staging can decide what to repair vs. reject.
     """
+    safe_path = csv_path.as_posix().replace("'", "''")  # escape for the SQL literal
     return (
-        f"read_csv('{csv_path.as_posix()}', "
+        f"read_csv('{safe_path}', "
         "header=true, all_varchar=true, quote='\"', escape='\"', "
         "ignore_errors=false)"
     )

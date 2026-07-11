@@ -31,8 +31,11 @@ with processor as (
         currency,
         status,
         source_system,
+        -- deterministic tie-break so equal settled_at collisions don't flip
+        -- category between identical re-runs
         row_number() over (
-            partition by transaction_id order by settled_at desc nulls last
+            partition by transaction_id
+            order by settled_at desc nulls last, processor_reference desc nulls last
         ) as _rn
     from {{ ref('stg_settlements') }}
     where cast(settled_at as date) = date '{{ var("reference_date") }}'
@@ -53,6 +56,8 @@ joined as (
     select
         coalesce(p.transaction_id, i.transaction_id) as transaction_id,
         coalesce(p.merchant_id, i.merchant_id)       as merchant_id,
+        (p.transaction_id is not null)               as _has_processor,
+        (i.transaction_id is not null)               as _has_internal,
         i.amount                                     as internal_amount,
         p.amount                                     as processor_amount,
         i.currency                                   as internal_currency,
@@ -79,8 +84,9 @@ select
     processor_source,
     difference,
     case
-        when internal_amount is null  then 'UNRECONCILED_PROCESSOR'
-        when processor_amount is null then 'UNRECONCILED_INTERNAL'
+        -- categorize by which SIDE is present (join result), not amount nullability
+        when not _has_internal  then 'UNRECONCILED_PROCESSOR'
+        when not _has_processor then 'UNRECONCILED_INTERNAL'
         -- both sides present: currencies must agree before amounts are comparable
         when internal_currency is distinct from processor_currency then 'MISMATCHED'
         when difference <= {{ var("reconciliation_tolerance") }} then 'MATCHED'
