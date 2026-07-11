@@ -5,7 +5,7 @@ with src as (
 ranked as (
     select
         *,
-        row_number() over (partition by id order by _timestamp desc) as _rn
+        row_number() over (partition by id order by _timestamp desc nulls last) as _rn
     from src
 )
 select

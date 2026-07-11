@@ -13,6 +13,12 @@ models:
           - accepted_values:
               values:
                 ["MATCHED", "MISMATCHED", "UNRECONCILED_PROCESSOR", "UNRECONCILED_INTERNAL"]
+      - name: currency
+        description: Drives the CFO per-currency grain — guard it at the fact.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["BRL", "USD", "EUR"]
       - name: merchant_id
         tests:
           - relationships:

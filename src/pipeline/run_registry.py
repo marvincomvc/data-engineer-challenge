@@ -95,13 +95,27 @@ def load_dq_results(
     """Parse dbt's run_results.json and load test outcomes into dq_check_result.
 
     This is what makes the DQ observability surface real: after `dbt test`/`build`,
-    every test's pass/warn/error + failing-row count lands in a queryable table,
-    not just dbt's logs. Returns the number of checks recorded.
+    every test's outcome lands in a queryable table, not just dbt's logs. Crucially
+    it is called even when dbt EXITS NON-ZERO (an error gate failed) — that is when
+    the table matters most. Returns the number of checks recorded.
+
+    `severity` is the test's CONFIGURED severity (error|warn) read from manifest.json,
+    independent of whether it passed; `passed` is the actual outcome. So a blocked
+    run shows severity='error', passed=false for the gate that stopped it.
     """
     path = Path(run_results_path)
     if not path.exists():
         log.info("dq.no_run_results", extra={"json": {"path": str(path)}})
         return 0
+
+    # configured severity per test node (default 'error' — dbt's default)
+    severities: dict[str, str] = {}
+    manifest_path = path.parent / "manifest.json"
+    if manifest_path.exists():
+        nodes = json.loads(manifest_path.read_text()).get("nodes", {})
+        for uid, node in nodes.items():
+            if uid.startswith("test."):
+                severities[uid] = str(node.get("config", {}).get("severity", "error")).lower()
 
     results = json.loads(path.read_text()).get("results", [])
     rows = []
@@ -111,13 +125,12 @@ def load_dq_results(
             continue
         status = r.get("status", "")
         failures = r.get("failures")
-        severity = "warn" if status == "warn" else "error" if status in ("fail", "error") else "info"
         rows.append(
             (
                 run_id,
                 reference_date,
                 uid.split(".")[-1],
-                severity,
+                severities.get(uid, "error"),   # configured severity, not run status
                 status == "pass",
                 float(failures) if failures is not None else None,
             )

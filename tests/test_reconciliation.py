@@ -70,6 +70,26 @@ def test_cfo_volume_has_per_currency_grain(built):
     assert {"BRL", "USD"} <= currencies
 
 
+def test_cfo_volume_excludes_cross_currency_amount(built):
+    # t9 is BRL internal / USD processor: its USD processor_amount (100) must NOT
+    # be summed into the BRL processor_volume. BRL processor rows are
+    # t1+t2+t3+t5+t6 = 100 + 100.01 + 100.02 + 75 + 200 = 575.03.
+    con = duckdb.connect(str(built), read_only=True)
+    try:
+        brl, usd = (
+            con.execute(
+                "select "
+                "  sum(processor_volume) filter (where currency='BRL'), "
+                "  sum(processor_volume) filter (where currency='USD') "
+                "from main.mart_cfo_volume"
+            ).fetchone()
+        )
+    finally:
+        con.close()
+    assert float(brl) == 575.03   # cross-currency USD 100 excluded
+    assert float(usd) == 200.00   # only t8-usd
+
+
 def test_grain_is_unique(built):
     con = duckdb.connect(str(built), read_only=True)
     try:

@@ -91,13 +91,20 @@ def cmd_dbt(cfg: Config, reference_date: str, run_id: str, command: str) -> None
     # around the subprocess.
     with record_stage_standalone(cfg.duckdb_path, run_id, reference_date, f"dbt_{command}"):
         result = subprocess.run(cmd, text=True)
+        # Load DQ results BEFORE raising: dbt writes run_results.json even when an
+        # error-severity gate fails (non-zero exit) — that is exactly when the
+        # dq_check_result table needs the evidence. Best-effort so a load hiccup
+        # never masks the real dbt outcome.
+        if command in ("test", "build"):
+            try:
+                load_dq_results(
+                    cfg.duckdb_path, run_id, reference_date,
+                    Path(DBT_DIR) / "target" / "run_results.json",
+                )
+            except Exception as exc:  # noqa: BLE001 - observability must not break the pipeline
+                log.warning("dq.load_failed", extra={"json": {"run_id": run_id, "error": str(exc)}})
         if result.returncode != 0:
             raise RuntimeError(f"dbt {command} failed with exit code {result.returncode}")
-        # dbt has exited (released the file lock); surface test results into DQ observability.
-        if command in ("test", "build"):
-            load_dq_results(
-                cfg.duckdb_path, run_id, reference_date, Path(DBT_DIR) / "target" / "run_results.json"
-            )
 
 
 def main(argv: list[str] | None = None) -> int:

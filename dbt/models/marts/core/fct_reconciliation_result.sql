@@ -8,9 +8,11 @@
 -- alongside this one — see docs/data-products.md. The run_id + _loaded_at
 -- columns record which run last wrote each row.
 --
--- Idempotency: incremental + delete+insert on the natural key. Re-running a
--- reference_date replaces that date's rows, so a re-run (or a retry after a
--- mid-run crash) can never duplicate.
+-- Idempotency: incremental + delete+insert on the natural key. A re-run replaces
+-- the rows for the (reference_date, transaction_id) keys present in the new batch,
+-- so it can never duplicate. Caveat: if a re-run's key set SHRINKS (a txn drops
+-- out of the date), the stale row is not removed — see docs/review-decisions.md;
+-- switch to insert_overwrite by reference_date if strict slice replacement is needed.
 {{
     config(
         materialized='incremental',
