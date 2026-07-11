@@ -1,9 +1,16 @@
 -- Grain: one row per (reference_date, transaction_id).
--- The immutable audit spine of the platform.
+-- The CURRENT-STATE reconciliation fact (what the latest run decided per txn).
+--
+-- NOTE: this is current-state, NOT append-only audit history. A re-run
+-- overwrites the prior category/amounts/run_id for a key (delete+insert). If
+-- Compliance ever needs to reconstruct what an EARLIER run decided after a
+-- corrected re-run, add an append-only fact keyed by (run_id, transaction_id)
+-- alongside this one — see docs/data-products.md. The run_id + _loaded_at
+-- columns record which run last wrote each row.
 --
 -- Idempotency: incremental + delete+insert on the natural key. Re-running a
--- reference_date deletes exactly that date's slice and re-inserts it, so a
--- re-run (or a retry after a mid-run crash) can never duplicate or corrupt rows.
+-- reference_date replaces that date's rows, so a re-run (or a retry after a
+-- mid-run crash) can never duplicate.
 {{
     config(
         materialized='incremental',
@@ -18,6 +25,9 @@ select
     category,
     internal_amount,
     processor_amount,
+    currency,           -- resolved currency; downstream never sums across currencies
+    internal_currency,
+    processor_currency,
     processor_status,
     processor_source,   -- which processor settled it (paysettler, …)
     difference,

@@ -248,7 +248,8 @@ runbook de troubleshooting em [`docs/troubleshooting.md`](troubleshooting.md).
 
 As **decisões de negócio e arquitetura foram minhas**; o papel da IA foi expor alternativas,
 acelerar a implementação e servir de checklist. Cada camada gerada foi **executada contra os
-dados reais** e só aceita quando passava — 14 testes verdes, ruff limpo, diagramas renderizados.
+dados reais** e só aceita quando passava — 16 testes do pipeline verdes (25 no total com os
+smoke tests do gerador), ruff limpo, diagramas renderizados.
 Sou explícito sobre o que **não** consegui validar sem infraestrutura: o container do Metabase
 (driver de comunidade DuckDB↔Metabase, versões que oscilam) — por isso a URL do driver é
 sobrescrevível e está documentada, e os produtos Parquet independem dele. Essa disciplina de

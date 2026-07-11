@@ -54,11 +54,14 @@ with DAG(
         append_env=True,
     )
 
+    # Go through the CLI (not raw dbt) so every stage is recorded in
+    # meta.pipeline_run and DQ results are loaded into meta.dq_check_result under
+    # Airflow exactly as in the local `make run` path, all sharing one run_id.
     dbt_run = BashOperator(
         task_id="dbt_run",
         bash_command=(
-            f"cd {REPO} && dbt run --project-dir dbt --profiles-dir dbt "
-            f'--vars \'{{"reference_date": "{REFERENCE_DATE}", "run_id": "{{{{ run_id }}}}"}}\''
+            f"cd {REPO} && python -m pipeline dbt-run "
+            f"--reference-date {REFERENCE_DATE} --run-id {{{{ run_id }}}}"
         ),
         env=COMMON_ENV,
         append_env=True,
@@ -69,8 +72,8 @@ with DAG(
     dbt_test = BashOperator(
         task_id="dbt_test",
         bash_command=(
-            f"cd {REPO} && dbt test --project-dir dbt --profiles-dir dbt "
-            f'--vars \'{{"reference_date": "{REFERENCE_DATE}", "run_id": "{{{{ run_id }}}}"}}\''
+            f"cd {REPO} && python -m pipeline dbt-test "
+            f"--reference-date {REFERENCE_DATE} --run-id {{{{ run_id }}}}"
         ),
         env=COMMON_ENV,
         append_env=True,

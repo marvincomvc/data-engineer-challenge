@@ -26,8 +26,10 @@ from mart_ops_health
 order by reference_date desc
 limit 1;
 
--- Q3. Which reference dates had a failed run (data may be missing/stale)?
-select reference_date, run_status, total_transactions
+-- Q3. Which reference dates had a failed SOURCE reconciliation run (upstream
+--     service — data may be missing/stale)? For THIS pipeline's own run health,
+--     see sql/examples/pipeline_health.sql.
+select reference_date, source_run_status, total_transactions
 from mart_ops_health
-where run_status is distinct from 'COMPLETED'
+where source_run_status is distinct from 'COMPLETED'
 order by reference_date;

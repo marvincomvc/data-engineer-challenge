@@ -6,14 +6,17 @@
 --             [reference_date - window_days, reference_date]  (inclusive)
 --   Match   : on transaction_id (same UUID in both systems)
 --   Tolerance: |processor_amount - internal_amount| <= tolerance  -> MATCHED
+--   Currency: a cross-currency pair can NEVER match (amounts aren't comparable);
+--             it is categorized MISMATCHED regardless of numeric difference.
 --
---   MATCHED                 both sides present, within tolerance
---   MISMATCHED              both sides present, difference beyond tolerance
+--   MATCHED                 both sides present, same currency, within tolerance
+--   MISMATCHED              both sides present; different currency OR beyond tolerance
 --   UNRECONCILED_PROCESSOR  in processor file, no internal pair in window
 --   UNRECONCILED_INTERNAL   internal in window, not in processor file
 --
 -- Both sides are de-duplicated to transaction_id so the output grain is exactly
--- one row per (reference_date, transaction_id).
+-- one row per (reference_date, transaction_id). Currency is carried through so
+-- downstream marts never sum across currencies.
 -- ==========================================================================
 with processor as (
     -- canonical stream across ALL processors; if the same transaction_id arrives
@@ -25,6 +28,7 @@ with processor as (
         transaction_id,
         merchant_id,
         amount,
+        currency,
         status,
         source_system,
         row_number() over (
@@ -34,12 +38,12 @@ with processor as (
     where cast(settled_at as date) = date '{{ var("reference_date") }}'
 ),
 processor_dedup as (
-    select transaction_id, merchant_id, amount, status, source_system
+    select transaction_id, merchant_id, amount, currency, status, source_system
     from processor
     where _rn = 1
 ),
 internal as (
-    select transaction_id, merchant_id, amount
+    select transaction_id, merchant_id, amount, currency
     from {{ ref('stg_transactions') }}
     where cast(created_at as date)
           between (date '{{ var("reference_date") }}' - {{ var("reconciliation_window_days") }})
@@ -51,6 +55,10 @@ joined as (
         coalesce(p.merchant_id, i.merchant_id)       as merchant_id,
         i.amount                                     as internal_amount,
         p.amount                                     as processor_amount,
+        i.currency                                   as internal_currency,
+        p.currency                                   as processor_currency,
+        -- resolved currency: internal side is authoritative, else the processor's
+        coalesce(i.currency, p.currency)             as currency,
         p.status                                     as processor_status,
         p.source_system                              as processor_source,
         abs(coalesce(p.amount, 0) - coalesce(i.amount, 0)) as difference
@@ -64,12 +72,17 @@ select
     merchant_id,
     internal_amount,
     processor_amount,
+    currency,
+    internal_currency,
+    processor_currency,
     processor_status,
     processor_source,
     difference,
     case
         when internal_amount is null  then 'UNRECONCILED_PROCESSOR'
         when processor_amount is null then 'UNRECONCILED_INTERNAL'
+        -- both sides present: currencies must agree before amounts are comparable
+        when internal_currency is distinct from processor_currency then 'MISMATCHED'
         when difference <= {{ var("reconciliation_tolerance") }} then 'MATCHED'
         else 'MISMATCHED'
     end as category

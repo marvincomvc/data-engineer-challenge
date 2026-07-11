@@ -1,6 +1,10 @@
--- OPERATIONS: daily reconciliation health.
+-- OPERATIONS: daily reconciliation health. One row per reference_date.
 -- Answers: "is the discrepancy rate rising?", "how many items need investigation
--- today?", "which run failed?". One row per reference_date.
+-- today?", "did the SOURCE reconciliation service's run fail that day?".
+-- NOTE: source_run_status reflects the upstream reconciliation service (from
+-- reconciliation_runs), NOT this pipeline. This pipeline's own run health lives
+-- in meta.pipeline_run (see sql/examples/pipeline_health.sql) — a failed dbt run
+-- can't publish this mart at all, so pipeline failures are observed there.
 with results as (
     select * from {{ ref('fct_reconciliation_result') }}
 ),
@@ -27,7 +31,7 @@ latest_run as (
 select
     b.reference_date,
     d.is_weekend,
-    r.status                                     as run_status,
+    r.status                                     as source_run_status,
     b.total_transactions,
     b.matched,
     b.mismatched,

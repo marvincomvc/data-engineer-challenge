@@ -33,8 +33,9 @@ def test_products_readable_without_warehouse(controlled_warehouse):
     rows = con.execute(
         f"select total_transactions from read_parquet('{glob}', hive_partitioning=true)"
     ).fetchall()
-    # 6 scenario txns + t7-drift (batch_2, in-window, unreconciled_internal) = 7
-    assert rows and rows[0][0] == 7
+    # in-window fact rows for the reference_date: t1,t2,t3,t4,t6(proc),t5(proc),
+    # t7-drift, t8-usd, t9-crossccy = 9
+    assert rows and rows[0][0] == 9
 
 
 def test_serving_catalog_exposes_all_products(controlled_warehouse):

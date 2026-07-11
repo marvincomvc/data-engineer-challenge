@@ -52,6 +52,24 @@ def test_cdc_collapse_uses_latest_amount(built):
     assert _categories(built)["t1-match"] == "MATCHED"
 
 
+def test_cross_currency_pair_is_mismatched(built):
+    # same transaction_id, BRL internal vs USD processor -> cannot MATCH.
+    assert _categories(built)["t9-crossccy"] == "MISMATCHED"
+
+
+def test_cfo_volume_has_per_currency_grain(built):
+    # a USD transaction must appear as its own (reference_date, currency) row,
+    # never summed into BRL.
+    con = duckdb.connect(str(built), read_only=True)
+    try:
+        currencies = {
+            r[0] for r in con.execute("select distinct currency from main.mart_cfo_volume").fetchall()
+        }
+    finally:
+        con.close()
+    assert {"BRL", "USD"} <= currencies
+
+
 def test_grain_is_unique(built):
     con = duckdb.connect(str(built), read_only=True)
     try:

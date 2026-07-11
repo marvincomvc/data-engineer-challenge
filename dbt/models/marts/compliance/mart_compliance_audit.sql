@@ -15,6 +15,7 @@ select
     c.needs_investigation,
     f.internal_amount,
     f.processor_amount,
+    f.currency,
     f.difference,
     f.processor_status,
     f.processor_source,

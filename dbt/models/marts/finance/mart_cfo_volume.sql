@@ -4,19 +4,13 @@
 -- "what is our reversal (chargeback) volume?".
 --
 -- Grain is (reference_date, currency): amounts of different currencies are NEVER
--- summed into one figure — a mixed-currency day yields one row per currency.
-with enriched as (
-    select
-        r.*,
-        coalesce(t.currency, 'BRL') as currency  -- processor-only rows default to BRL
-    from {{ ref('fct_reconciliation_result') }} r
-    left join {{ ref('fct_transaction') }} t using (transaction_id)
-)
+-- summed into one figure. Currency comes straight from the fact (resolved from
+-- the internal side, else the processor side) — no BRL assumption.
 select
     reference_date,
     currency,
     count(*)                                                                    as transactions,
-    -- processor-confirmed settled volume (what PaySettler says it moved)
+    -- processor-confirmed settled volume (what the processor says it moved)
     sum(coalesce(processor_amount, 0))                                          as processor_volume,
     -- internal booked volume
     sum(coalesce(internal_amount, 0))                                           as internal_volume,
@@ -25,5 +19,5 @@ select
     -- financial exposure still under investigation
     coalesce(sum(difference) filter (where category = 'MISMATCHED'), 0)         as mismatch_exposure,
     coalesce(sum(processor_amount) filter (where processor_status = 'REVERSED'), 0) as reversed_volume
-from enriched
+from {{ ref('fct_reconciliation_result') }}
 group by reference_date, currency

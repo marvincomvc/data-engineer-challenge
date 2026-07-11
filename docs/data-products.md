@@ -15,9 +15,11 @@ Bronze (raw CDC/CSV + lineage)
              └─ consumer marts: mart_ops_health · mart_cfo_volume · mart_compliance_audit
 ```
 
-`fct_reconciliation_result` is the **immutable spine**: one row per transaction per
-business day, categorized by our own reconciliation engine. Every consumer mart is
-a projection of that fact joined to conformed dimensions. Why this shape:
+`fct_reconciliation_result` is the **current-state spine**: one row per transaction per
+business day, categorized by our own reconciliation engine, carrying `run_id` +
+`_loaded_at` provenance. It is idempotent current-state (a corrected re-run overwrites
+that date's rows), **not** append-only history — see the audit note below. Every consumer
+mart is a projection of that fact joined to conformed dimensions. Why this shape:
 
 - **A star schema is the least-surprising, most defensible choice** for three
   heterogeneous consumers — each mart reuses the same conformed `dim_merchant` /
@@ -49,15 +51,18 @@ deliberately pushed to the compliance mart to keep this one focused.
 
 | Can answer | Cannot answer (by design) |
 |---|---|
-| Settled vs. **confirmed (matched)** volume per day & currency | Per-merchant revenue breakdown (a future `mart_cfo_by_merchant`) |
+| Settled vs. **confirmed (matched)** volume, **per day AND per currency** (never summed across currencies) | Per-merchant revenue breakdown (a future `mart_cfo_by_merchant`) |
 | Financial **exposure** under investigation (Σ mismatch difference) | Fees / net revenue (not in source data) |
-| **Reversal** (chargeback) volume and rate — a risk signal | Forecasts / projections (BI/planning concern) |
+| **Reversal** (chargeback) volume and rate — a risk signal | FX-converted totals (no conversion; each currency reported on its own) |
 
 **Why these:** the CFO's core question is "how much money, and can I trust it?" —
 so we separate *settled* (what the processor claims) from *confirmed* (matched
-within tolerance) and quantify exposure and reversals. Fees/net are excluded
-because the source contains gross settlement only — a scope boundary, stated
-rather than faked.
+within tolerance) and quantify exposure and reversals. **Currency correctness:** the
+grain is `(reference_date, currency)` and currency is carried through the fact from the
+reconciliation engine, so BRL/USD/EUR are never conflated; a cross-currency pair
+(internal ≠ processor currency) is categorized `MISMATCHED` since the amounts aren't
+comparable. Fees/net and FX conversion are excluded — the source contains gross,
+single-currency settlement only, a scope boundary stated rather than faked.
 
 ## Compliance — `mart_compliance_audit`
 
@@ -65,15 +70,22 @@ rather than faked.
 
 | Can answer | Cannot answer (by design) |
 |---|---|
-| Full per-transaction audit record (category, amounts, merchant legal identity, run, source file, `audited_at`) | Point-in-time merchant *history* (name/CNAE as-of a past date) — needs SCD2 |
-| Per-merchant discrepancy summary (who to audit) | Who/what *changed* a record (no user-action log in source) |
-| Completeness/immutability checks (no audit gaps) | |
+| Full per-transaction audit record (category, amounts, currency, merchant legal identity, run, source file, `audited_at`) | Point-in-time merchant *history* (name/CNAE as-of a past date) — needs SCD2 |
+| Per-merchant discrepancy summary (who to audit) | What an *earlier* run decided after a corrected re-run — needs an append-only audit fact |
+| Completeness/grain checks (no audit gaps or duplicates) | Who/what *changed* a record (no user-action log in source) |
 
-**Why current-state merchant, not SCD2:** the *audit* need — reproducing a past
-day's categorization — is already met by the immutable, date-keyed fact. Merchant
-attributes rarely change and full SCD2 (via a dbt snapshot on `_timestamp`) is a
-documented, low-risk extension rather than build-now scope. This is the main YAGNI
-call in Part 1; the upgrade path is one `snapshots/` file + a join swap.
+**Two deliberate current-state simplifications (with upgrade paths):**
+
+1. **The fact is current-state, not append-only history.** A corrected re-run overwrites a
+   `(reference_date, transaction_id)` row; `run_id` + `_loaded_at` record *which* run last
+   wrote it, but not what a prior run decided. If regulators need full decision lineage, add
+   an append-only fact keyed by `(run_id, transaction_id)` alongside this one — the current
+   fact becomes its `is_current` projection. Deferred, not built.
+2. **Merchant dim is Type 1, not SCD2.** Reproducing a past day's *categorization* is met by
+   the date-keyed fact; merchant attributes rarely change, so full SCD2 (a dbt snapshot on
+   `_timestamp`) is a low-risk extension — one `snapshots/` file + a join swap.
+
+These are the main YAGNI calls in Part 1, stated rather than hidden.
 
 ---
 

@@ -14,7 +14,7 @@ Compliance, using a medallion pipeline on **DuckDB + dbt + Airflow**.
 - **Recomputes** reconciliation from raw sources (7-day window, R$0,01 tolerance,
   match on `transaction_id`) — it does not trust the pre-baked results.
 - **Medallion + star schema**: Bronze (raw+lineage) → Silver (CDC-collapsed,
-  repaired) → Gold (conformed dims + immutable fact + 3 consumer marts).
+  repaired) → Gold (conformed dims + current-state fact + 3 consumer marts).
 - **Idempotent**: re-running a `reference_date` never duplicates or corrupts
   (delete+insert on the natural key). Proven by tests.
 - **Data quality is gated**: integrity → `error` (blocks), anomaly → `warn`

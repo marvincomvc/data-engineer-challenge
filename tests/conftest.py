@@ -21,15 +21,19 @@ VENV_DIR = os.environ.get("PIPELINE_VENV")  # optional: dir with bin/dbt + bin/p
 
 REFERENCE_DATE = "2025-01-10"  # window [2025-01-03, 2025-01-10]
 
-# (transaction_id, merchant_id, internal_amount, created_at, csv_amount_str, expected_category)
-# csv_amount_str is None when the txn is NOT in the processor file.
+# (transaction_id, merchant, internal_amount, created_at, csv_amount_str,
+#  internal_ccy, processor_ccy, expected_category)
+# csv_amount_str / processor_ccy are None when the txn is NOT in the processor file;
+# internal_ccy is None when there is no internal row.
 SCENARIO = [
-    ("t1-match",      "merch_a", 100.00, "2025-01-08", "100.00",   "MATCHED"),
-    ("t2-tolerance",  "merch_a", 100.00, "2025-01-09", "100.01",   "MATCHED"),                 # diff==tol
-    ("t3-mismatch",   "merch_b", 100.00, "2025-01-07", "100,02",   "MISMATCHED"),              # comma decimal
-    ("t4-internal",   "merch_b",  50.00, "2025-01-05", None,       "UNRECONCILED_INTERNAL"),
-    ("t5-processor",  "merch_c",  75.00, None,         "R$ 75,00", "UNRECONCILED_PROCESSOR"),  # pt-BR, no internal
-    ("t6-outofwindow","merch_c", 200.00, "2025-01-01", "200.00",   "UNRECONCILED_PROCESSOR"),  # internal before window
+    ("t1-match",      "merch_a", 100.00, "2025-01-08", "100.00",   "BRL", "BRL", "MATCHED"),
+    ("t2-tolerance",  "merch_a", 100.00, "2025-01-09", "100.01",   "BRL", "BRL", "MATCHED"),        # diff==tol
+    ("t3-mismatch",   "merch_b", 100.00, "2025-01-07", "100,02",   "BRL", "BRL", "MISMATCHED"),     # comma decimal
+    ("t4-internal",   "merch_b",  50.00, "2025-01-05", None,       "BRL", None,  "UNRECONCILED_INTERNAL"),
+    ("t5-processor",  "merch_c",  75.00, None,         "R$ 75,00", None,  "BRL", "UNRECONCILED_PROCESSOR"),  # pt-BR
+    ("t6-outofwindow","merch_c", 200.00, "2025-01-01", "200.00",   "BRL", "BRL", "UNRECONCILED_PROCESSOR"),  # pre-window
+    ("t8-usd",        "merch_a", 200.00, "2025-01-08", "200.00",   "USD", "USD", "MATCHED"),        # USD grain
+    ("t9-crossccy",   "merch_b", 100.00, "2025-01-07", "100.00",   "BRL", "USD", "MISMATCHED"),     # cross-currency
 ]
 
 
@@ -48,17 +52,17 @@ def _build_sources(data_dir: Path) -> None:
     # (stale row first, correct row wins by _timestamp).
     rows_b1 = []
     idc = 1
-    for tid, m, amt, created, _csv, _cat in SCENARIO:
+    for tid, m, amt, created, _csv, int_ccy, _proc_ccy, _cat in SCENARIO:
         if created is None:
             continue
         if tid == "t1-match":
-            rows_b1.append((idc, tid, m, 999.99, "COMPLETED", created, "c", "2025-01-08T00:00:00"))
+            rows_b1.append((idc, tid, m, 999.99, int_ccy, "COMPLETED", created, "c", "2025-01-08T00:00:00"))
             idc += 1
-        rows_b1.append((idc, tid, m, amt, "COMPLETED", created, "c", "2025-01-09T00:00:00"))
+        rows_b1.append((idc, tid, m, amt, int_ccy, "COMPLETED", created, "c", "2025-01-09T00:00:00"))
         idc += 1
     values_b1 = ",".join(
-        f"({i},'{t}','{m}',{a},'BRL','{s}','desc','{c}','{c}','{op}','{ts}')"
-        for (i, t, m, a, s, c, op, ts) in rows_b1
+        f"({i},'{t}','{m}',{a},'{ccy}','{s}','desc','{c}','{c}','{op}','{ts}')"
+        for (i, t, m, a, ccy, s, c, op, ts) in rows_b1
     )
     con.execute(
         f"""COPY (SELECT * FROM (VALUES {values_b1})
@@ -75,12 +79,12 @@ def _build_sources(data_dir: Path) -> None:
     # --- PaySettler CSV -----------------------------------------------------
     csv_path = data_dir / "settlement_paysettler.csv"
     lines = ["transaction_id,merchant_id,amount,currency,settled_at,processor_reference,status"]
-    for tid, m, _amt, _created, csv_amt, _cat in SCENARIO:
+    for tid, m, _amt, _created, csv_amt, _int_ccy, proc_ccy, _cat in SCENARIO:
         if csv_amt is None:
             continue
         # quote amounts containing commas (pt-BR)
         amt_field = f'"{csv_amt}"' if "," in csv_amt else csv_amt
-        lines.append(f"{tid},{m},{amt_field},BRL,{REFERENCE_DATE}T12:00:00Z,PS-1,SETTLED")
+        lines.append(f"{tid},{m},{amt_field},{proc_ccy},{REFERENCE_DATE}T12:00:00Z,PS-1,SETTLED")
     csv_path.write_text("\n".join(lines) + "\n")
     # --- other CDC sources (minimal but schema-complete) --------------------
     con.execute(
@@ -150,4 +154,4 @@ def controlled_warehouse(tmp_path: Path):
 
 @pytest.fixture
 def expected_categories() -> dict[str, str]:
-    return {tid: cat for tid, _m, _a, _c, _csv, cat in SCENARIO}
+    return {row[0]: row[-1] for row in SCENARIO}

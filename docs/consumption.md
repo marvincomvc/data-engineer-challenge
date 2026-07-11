@@ -7,9 +7,9 @@ The pipeline's output is not "a table in a database file" — it publishes
 
 DuckDB is **single-writer**: a BI tool or analyst holding `settlement.duckdb`
 open would block the pipeline from writing. So the `publish` stage exports Gold to
-an immutable, partitioned **Parquet zone** that consumers read instead — fully
-decoupled from the writer, and the same pattern you'd use in production (Gold →
-object storage → warehouse external tables / BI).
+a partitioned **Parquet zone** (one partition per `reference_date`, re-published on
+re-run) that consumers read instead — fully decoupled from the writer, and the same
+pattern you'd use in production (Gold → object storage → warehouse external tables / BI).
 
 ```
 gold/
