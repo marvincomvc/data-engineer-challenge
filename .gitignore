@@ -1,8 +1,5 @@
 # Data pipeline outputs (candidate generates these)
 data/
-bronze/
-silver/
-gold/
 *.duckdb
 *.duckdb.wal
 _delta_log/
@@ -218,3 +215,15 @@ __marimo__/
 # local tooling / internal
 .claude/
 docs/evaluation/
+.env
+
+# UV
+.venv/
+
+# Data
+data/
+duckdb-data/
+
+# Spark
+spark-warehouse/
+.vscode

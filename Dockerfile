@@ -2,6 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY . .
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-RUN pip install --no-cache-dir -e ".[dev]"
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen
+
+COPY app ./app
+
+ENV PYTHONPATH=/app
+
+CMD ["uv", "run", "python", "app/main.py"]

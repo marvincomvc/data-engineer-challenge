@@ -27,12 +27,11 @@ import shutil
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -190,7 +189,7 @@ class StreamingParquetWriter:
 # ---------------------------------------------------------------------------
 
 def gen_merchants(cfg: Config, rng: random.Random) -> list[dict]:
-    base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    base = datetime(2024, 1, 1, tzinfo=UTC)
     rows = []
     for i in range(1, cfg.merchants + 1):
         created = base + timedelta(days=rng.randint(0, 365))

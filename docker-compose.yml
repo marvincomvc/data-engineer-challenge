@@ -1,13 +1,45 @@
 services:
+
   pipeline:
+
     build: .
-    environment:
-      - PYTHONUNBUFFERED=1
-      - DATA_PATH=/app/docs/sample-data
-      - LOG_LEVEL=INFO
-      - ENVIRONMENT=local
+
+    container_name: settlement-pipeline
+
     volumes:
-      - ./docs/sample-data:/app/docs/sample-data:ro
-      - ./scripts:/app/scripts
-      - ./tests:/app/tests
-    command: tail -f /dev/null
+
+      - ./app:/app/app
+
+      - ./data:/app/data
+
+      - ./duckdb-data:/app/duckdb-data
+
+      - ./docs/sample-data:/app/raw
+
+
+    environment:
+
+      DUCKDB_PATH: /app/duckdb-data/warehouse.duckdb
+
+      DATA_PATH: /app/data
+
+      BRONZE_PATH: /app/data/bronze
+
+
+    command:
+
+      [
+        "uv",
+        "run",
+        "python",
+        "app/main.py"
+      ]
+
+
+  dashboard:
+    build: .
+    command: uv run python app/dashboard/main.py
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./duckdb-data:/app/duckdb-data

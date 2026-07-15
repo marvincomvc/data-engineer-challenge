@@ -5,7 +5,10 @@ description = "Data Engineer Technical Challenge"
 requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.2.0",
+    "fastapi>=0.139.0",
     "pyarrow>=18.0",
+    "python-dotenv",
+    "uvicorn>=0.51.0",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +23,27 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+include = [
+    "app/**/*.py"
+]
+
+exclude = [
+    ".venv",
+    "data",
+    "duckdb-data"
+]
+
+[tool.ruff.lint]
+
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "SIM", # simplify
+]
 
 [build-system]
 requires = ["hatchling"]
