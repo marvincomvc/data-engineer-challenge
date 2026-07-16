@@ -2,33 +2,21 @@ from pathlib import Path
 
 import duckdb
 
-from app.config import settings
+from app.config import settings, get_logger
 
+logger = get_logger("bronze.load")
 
 DOMAINS = {
-
-    "transactions":
-        "transactions_batch_*.parquet",
-
-    "reconciliation_runs":
-        "reconciliation_runs.parquet",
-
-    "reconciliation_results":
-        "reconciliation_results.parquet",
-
-    "enterprise_company":
-        "enterprise_company.parquet",
-
+    "transactions": "transactions_batch_*.parquet",
+    "reconciliation_runs": "reconciliation_runs.parquet",
+    "reconciliation_results": "reconciliation_results.parquet",
+    "enterprise_company": "enterprise_company.parquet",
 }
 
 
 def load_bronze():
 
-
-    conn = duckdb.connect(
-        settings.DUCKDB_PATH
-    )
-
+    conn = duckdb.connect(settings.DUCKDB_PATH)
 
     conn.execute(
         """
@@ -36,46 +24,20 @@ def load_bronze():
         """
     )
 
+    raw_path = Path(settings.DATA_PATH) / "raw"
 
-    raw_path = Path(
-        settings.DATA_PATH
-    ) / "raw"
+    bronze_path = Path(settings.BRONZE_PATH)
 
-
-    bronze_path = Path(
-        settings.BRONZE_PATH
-    )
-
-
-    bronze_path.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
+    bronze_path.mkdir(parents=True, exist_ok=True)
 
     for domain, filename in DOMAINS.items():
+        source_file = raw_path / filename
 
+        target_path = bronze_path / domain
 
-        source_file = (
-            raw_path / filename
-        )
+        target_path.mkdir(parents=True, exist_ok=True)
 
-
-        target_path = (
-            bronze_path / domain
-        )
-
-
-        target_path.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-
-        print(
-            f"Processing bronze: {domain}"
-        )
-
+        logger.info(f"Processing bronze: {domain}")
 
         query = f"""
 
@@ -96,18 +58,14 @@ def load_bronze():
 
             CAST(created_at AS DATE)
                 AS date_partition
-
-
         FROM read_parquet(
             '{source_file}'
         );
 
         """
 
-
         # Alguns arquivos não possuem created_at
         if domain == "reconciliation_results":
-
             query = f"""
 
             CREATE OR REPLACE TABLE
@@ -127,17 +85,13 @@ def load_bronze():
 
                 CAST(created_at AS DATE)
                     AS date_partition
-
-
             FROM read_parquet(
                 '{source_file}'
             );
 
             """
 
-
         elif domain == "reconciliation_runs":
-
             query = f"""
 
             CREATE OR REPLACE TABLE
@@ -157,17 +111,13 @@ def load_bronze():
 
                 reference_date
                     AS date_partition
-
-
             FROM read_parquet(
                 '{source_file}'
             );
 
             """
 
-
         elif domain == "enterprise_company":
-
             query = f"""
 
             CREATE OR REPLACE TABLE
@@ -187,17 +137,13 @@ def load_bronze():
 
                 CAST(created_at AS DATE)
                     AS date_partition
-
-
             FROM read_parquet(
                 '{source_file}'
             );
 
             """
 
-
         conn.execute(query)
-
 
         # Exporta Bronze em parquet
 
@@ -217,10 +163,6 @@ def load_bronze():
             """
         )
 
-
-        print(
-            f"Bronze created: {domain}"
-        )
-
+        logger.info(f"Bronze created: {domain}")
 
     conn.close()

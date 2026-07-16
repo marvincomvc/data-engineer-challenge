@@ -2,15 +2,14 @@ from pathlib import Path
 
 import duckdb
 
-from app.config import settings
+from app.config import settings, get_logger
+
+logger = get_logger("gold.build")
 
 
 def build_gold():
 
-    conn = duckdb.connect(
-        settings.DUCKDB_PATH
-    )
-
+    conn = duckdb.connect(settings.DUCKDB_PATH)
 
     conn.execute(
         """
@@ -18,16 +17,9 @@ def build_gold():
         """
     )
 
+    gold_path = Path(settings.GOLD_PATH)
 
-    gold_path = Path(
-        settings.GOLD_PATH
-    )
-
-    gold_path.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
+    gold_path.mkdir(parents=True, exist_ok=True)
 
     #
     # Dimensão Merchant
@@ -56,14 +48,9 @@ def build_gold():
             updated_at,
 
             ingestion_date
-
-
         FROM silver.enterprise_company;
-
-
         """
     )
-
 
     #
     # Fato de reconciliação
@@ -82,26 +69,16 @@ def build_gold():
             rr.transaction_id,
 
             rr.merchant_id,
-
-
             rr.category,
-
-
             rr.internal_amount,
 
             rr.processor_amount,
 
             rr.difference,
-
-
             rr.created_at,
-
-
             rr.ingestion_date,
 
             rr.date_partition,
-
-
             CASE
 
                 WHEN rr.category = 'MATCHED'
@@ -110,25 +87,13 @@ def build_gold():
                 ELSE FALSE
 
             END AS is_reconciled,
-
-
-            CASE
-
-                WHEN rr.difference > 0
-                    THEN TRUE
-
-                ELSE FALSE
-
-            END AS has_difference
-
-
+           CASE WHEN rr.difference IS NOT NULL AND rr.difference > 0 THEN TRUE
+            WHEN rr.difference IS NULL THEN NULL  -- ou trate como caso à parte
+            ELSE FALSE END AS has_difference
 
         FROM silver.reconciliation_results rr;
-
-
         """
     )
-
 
     #
     # Exporta parquet gold
@@ -146,11 +111,8 @@ def build_gold():
             PARTITION_BY(date_partition),
             OVERWRITE_OR_IGNORE TRUE
         );
-
-
         """
     )
-
 
     conn.execute(
         f"""
@@ -163,15 +125,9 @@ def build_gold():
             FORMAT PARQUET,
             OVERWRITE_OR_IGNORE TRUE
         );
-
-
         """
     )
 
-
     conn.close()
 
-
-    print(
-        "Gold layer created"
-    )
+    logger.info("Gold layer created")

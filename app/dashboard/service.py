@@ -5,11 +5,7 @@ from app.config import settings
 
 def get_dashboard_data():
 
-    conn = duckdb.connect(
-        settings.DUCKDB_PATH,
-        read_only=True
-    )
-
+    conn = duckdb.connect(settings.DUCKDB_PATH, read_only=True)
 
     #
     # KPIs CFO
@@ -45,8 +41,6 @@ def get_dashboard_data():
         """
     ).fetchone()
 
-
-
     #
     # Taxa reconciliação
     #
@@ -71,8 +65,6 @@ def get_dashboard_data():
         """
     ).fetchone()
 
-
-
     #
     # Volume por dia
     #
@@ -92,8 +84,6 @@ def get_dashboard_data():
 
         """
     ).fetchall()
-
-
 
     #
     # Status reconciliação
@@ -123,8 +113,6 @@ def get_dashboard_data():
         """
     ).fetchall()
 
-
-
     #
     # Top merchants
     #
@@ -152,77 +140,21 @@ def get_dashboard_data():
         """
     ).fetchall()
 
-
-
     conn.close()
 
-
     return {
-
-
         "kpis": {
-
-            "transactions":
-                kpis[0] or 0,
-
-
-            "volume":
-                kpis[1] or 0,
-
-
-            "match_rate":
-                reconciliation[0] or 0,
-
-
-            "difference":
-                kpis[3] or 0
-
+            "transactions": kpis[0] or 0,
+            "volume": kpis[1] or 0,
+            "match_rate": reconciliation[0] or 0,
+            "difference": kpis[3] or 0,
         },
-
-
         "daily": {
-
-
-            "date": [
-                row[0]
-                for row in daily
-            ],
-
-
-            "volume": [
-                row[1]
-                for row in daily
-            ],
-
-
+            "date": [row[0] for row in daily],
+            "volume": [row[1] for row in daily],
             # Mantém compatibilidade com o gráfico
-            "match_rate": [
-                reconciliation[0] or 0
-                for _ in daily
-            ]
-
+            "match_rate": [reconciliation[0] or 0 for _ in daily],
         },
-
-
-        "status": {
-
-            row[0]:
-                row[1]
-
-            for row in status_rows
-
-        },
-
-
-        "merchants": [
-
-            {
-                "name": row[0],
-                "volume": row[1]
-            }
-
-            for row in merchants
-
-        ]
-
+        "status": {row[0]: row[1] for row in status_rows},
+        "merchants": [{"name": row[0], "volume": row[1]} for row in merchants],
     }

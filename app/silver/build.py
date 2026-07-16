@@ -1,7 +1,8 @@
 import duckdb
 
-from app.config import settings
+from app.config import settings, get_logger
 
+logger = get_logger("silver.build")
 
 TABLES = {
     "transactions": "transaction_id",
@@ -9,8 +10,6 @@ TABLES = {
     "reconciliation_results": "result_id",
     "enterprise_company": "merchant_id",
 }
-
-
 TIMESTAMP_COLUMNS = {
     "created_at",
     "updated_at",
@@ -49,8 +48,7 @@ def build_silver():
     """)
 
     for table, pk in TABLES.items():
-
-        print(f"Building silver.{table}")
+        logger.info(f"Building silver.{table}")
 
         columns = conn.execute(f"""
             SELECT column_name
@@ -65,37 +63,24 @@ def build_silver():
         select_columns = []
 
         for column in columns:
-
             if column in TIMESTAMP_COLUMNS:
-
-                select_columns.append(
-                    f"TRY_CAST({column} AS TIMESTAMP) AS {column}"
-                )
+                select_columns.append(f"TRY_CAST({column} AS TIMESTAMP) AS {column}")
 
             elif column in DATE_COLUMNS:
-
-                select_columns.append(
-                    f"TRY_CAST({column} AS DATE) AS {column}"
-                )
+                select_columns.append(f"TRY_CAST({column} AS DATE) AS {column}")
 
             elif column in DOUBLE_COLUMNS:
-
                 select_columns.append(
                     f"TRY_CAST(REPLACE(CAST({column} AS VARCHAR), ',', '.') AS DOUBLE) AS {column}"
                 )
 
             elif column in INTEGER_COLUMNS:
-
-                select_columns.append(
-                    f"TRY_CAST({column} AS INTEGER) AS {column}"
-                )
+                select_columns.append(f"TRY_CAST({column} AS INTEGER) AS {column}")
 
             else:
-
                 select_columns.append(column)
 
         if "updated_at" not in columns:
-
             conn.execute(f"""
                 CREATE OR REPLACE TABLE silver.{table} AS
 

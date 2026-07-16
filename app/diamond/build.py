@@ -2,7 +2,9 @@ from pathlib import Path
 
 import duckdb
 
-from app.config import settings
+from app.config import settings, get_logger
+
+logger = get_logger("diamond.build")
 
 
 def build_diamond():
@@ -28,17 +30,9 @@ def build_diamond():
 
         CREATE OR REPLACE TABLE
         diamond.operations_reconciliation_health AS
-
-
         SELECT
-
-
             date_partition AS reference_date,
-
-
             COUNT(*) AS total_transactions,
-
-
             SUM(
                 CASE
                     WHEN is_reconciled
@@ -46,8 +40,6 @@ def build_diamond():
                     ELSE 0
                 END
             ) AS matched_transactions,
-
-
             SUM(
                 CASE
                     WHEN NOT is_reconciled
@@ -55,8 +47,6 @@ def build_diamond():
                     ELSE 0
                 END
             ) AS discrepancy_transactions,
-
-
             ROUND(
 
                 SUM(
@@ -76,14 +66,8 @@ def build_diamond():
 
             ) AS discrepancy_rate
 
-
-
         FROM gold.fact_reconciliation
-
-
         GROUP BY 1;
-
-
         """
     )
 
@@ -96,33 +80,21 @@ def build_diamond():
 
         CREATE OR REPLACE TABLE
         diamond.cfo_daily_metrics AS
-
-
         SELECT
-
-
             date_partition AS reference_date,
-
-
             COUNT(*) AS transaction_volume,
-
-
             SUM(
                 COALESCE(
                     internal_amount,
                     0
                 )
             ) AS total_internal_amount,
-
-
             SUM(
                 COALESCE(
                     processor_amount,
                     0
                 )
             ) AS total_processor_amount,
-
-
             SUM(
                 COALESCE(
                     difference,
@@ -130,14 +102,8 @@ def build_diamond():
                 )
             ) AS total_difference
 
-
-
         FROM gold.fact_reconciliation
-
-
         GROUP BY 1;
-
-
         """
     )
 
@@ -150,53 +116,23 @@ def build_diamond():
 
         CREATE OR REPLACE TABLE
         diamond.compliance_audit_history AS
-
-
         SELECT
-
-
             rr.run_id,
-
-
             rr.transaction_id,
-
-
             rr.merchant_id,
-
-
             rr.category,
-
-
             rr.internal_amount,
-
-
             rr.processor_amount,
-
-
             rr.difference,
-
-
             rr.created_at,
-
-
             r.reference_date,
-
-
             r.file_name,
-
-
             r.status AS reconciliation_status
 
-
-
         FROM gold.fact_reconciliation rr
-
-
-        LEFT JOIN bronze.reconciliation_runs r
+        LEFT JOIN silver.reconciliation_runs r
 
         ON rr.run_id = r.id;
-
-
 
         """
     )
@@ -219,11 +155,9 @@ def build_diamond():
                 FORMAT PARQUET,
                 OVERWRITE_OR_IGNORE TRUE
             );
-
-
             """
         )
 
     conn.close()
 
-    print("Diamond layer created")
+    logger.info("Diamond layer created")
