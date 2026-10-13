@@ -8,6 +8,8 @@ services:
       - ENVIRONMENT=local
     volumes:
       - ./docs/sample-data:/app/docs/sample-data:ro
+      - ./docs/dicionario-de-dados-origem:/app/docs/dicionario-de-dados-origem
       - ./scripts:/app/scripts
       - ./tests:/app/tests
+      - ./data:/app/data
     command: tail -f /dev/null

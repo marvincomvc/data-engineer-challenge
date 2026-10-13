@@ -1,0 +1,34 @@
+-- Assunto: CFO
+-- Objetivo: Consolidar diariamente os volumes financeiros por categoria de conciliação.
+----------------------------------------------------------------------------------------
+SELECT
+    reference_date,
+    category,
+    SUM(quantidade_resultados) AS quantidade_resultados,
+    SUM(transacoes_distintas) AS transacoes_distintas,
+    SUM(volume_interno) AS volume_interno,
+    SUM(volume_processador) AS volume_processador,
+    SUM(diferenca_absoluta_total) AS diferenca_absoluta_total
+FROM gold_cfo_volume_financeiro
+GROUP BY
+    reference_date,
+    category
+ORDER BY
+    reference_date,
+    category;
+
+-- Objetivo: Consolidar diariamente a quantidade de transações e o volume financeiro presentes no PaySettler, mas ausentes nos registros internos.
+----------------------------------------------------------------------------------------
+SELECT
+    reference_date,
+    moeda_externa,
+    SUM(quantidade_resultados) AS quantidade_resultados,
+    SUM(volume_processador) AS volume_processador
+FROM gold_cfo_volume_financeiro
+WHERE category = 'UNRECONCILED_PROCESSOR'
+GROUP BY
+    reference_date,
+    moeda_externa
+ORDER BY
+    reference_date,
+    moeda_externa;

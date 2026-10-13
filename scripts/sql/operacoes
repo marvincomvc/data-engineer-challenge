@@ -1,0 +1,34 @@
+-- Assunto: OPERAÇÕES
+-- Objetivo: Acompanhar a taxa diária de discrepâncias sobre o total de resultados da conciliação.
+---------------------------------------------------------------------------------------------------
+SELECT reference_date
+      ,SUM(quantidade_resultados) AS total_resultados
+      ,SUM(CASE WHEN category = 'MISMATCHED' THEN quantidade_resultados ELSE 0 END) AS resultados_com_discrepancia
+      ,ROUND(100.0 * SUM(CASE WHEN category = 'MISMATCHED' THEN quantidade_resultados ELSE 0 END) / NULLIF(SUM(quantidade_resultados), 0),2) AS taxa_discrepancia_pct
+FROM gold_operacoes_conciliacao
+GROUP BY reference_date
+ORDER BY reference_date;
+
+-- Objetivo: Acompanhar a distribuição diária dos resultados por categoria de conciliação (Colunada)
+---------------------------------------------------------------------------------------------------
+SELECT reference_date
+      ,SUM(CASE WHEN category = 'MATCHED' THEN quantidade_resultados ELSE 0 END) AS matched
+      ,SUM(CASE WHEN category = 'MISMATCHED' THEN quantidade_resultados ELSE 0 END) AS mismatched
+      ,SUM(CASE WHEN category = 'UNRECONCILED_PROCESSOR' THEN quantidade_resultados ELSE 0 END) AS unreconciled_processor
+      ,SUM(CASE WHEN category = 'UNRECONCILED_INTERNAL' THEN quantidade_resultados ELSE 0 END) AS unreconciled_internal
+      ,SUM(quantidade_resultados) AS total_resultados
+FROM gold_operacoes_conciliacao
+GROUP BY reference_date
+ORDER BY reference_date;
+
+
+-- Objetivo: Identificar os dias com maior volume financeiro de divergências na conciliação.
+---------------------------------------------------------------------------------------------------
+
+SELECT reference_date
+      ,SUM(quantidade_resultados) AS total_resultados
+      ,SUM(diferenca_absoluta_total) AS diferenca_absoluta_total
+      ,SUM(quantidade_diferenca_acima_001) AS divergencias_acima_tolerancia
+FROM gold_operacoes_conciliacao
+GROUP BY reference_date
+ORDER BY diferenca_absoluta_total DESC;

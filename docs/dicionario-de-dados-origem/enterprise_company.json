@@ -1,0 +1,48 @@
+{
+  "source_name": "enterprise_company",
+  "file": "sample-data/enterprise_company.parquet",
+  "format": "parquet",
+  "generated_at_utc": "2026-10-11T01:07:35.909412+00:00",
+  "columns": [
+    {
+      "name": "id",
+      "type": "BIGINT"
+    },
+    {
+      "name": "merchant_id",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "legal_name",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "trade_name",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "document",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "primary_cnae",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "created_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "updated_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "Op",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "_timestamp",
+      "type": "VARCHAR"
+    }
+  ]
+}

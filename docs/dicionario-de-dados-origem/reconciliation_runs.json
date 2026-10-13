@@ -1,0 +1,48 @@
+{
+  "source_name": "reconciliation_runs",
+  "file": "sample-data/reconciliation_runs.parquet",
+  "format": "parquet",
+  "generated_at_utc": "2026-10-11T01:07:35.877895+00:00",
+  "columns": [
+    {
+      "name": "id",
+      "type": "BIGINT"
+    },
+    {
+      "name": "reference_date",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "file_name",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "status",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "total_transactions",
+      "type": "BIGINT"
+    },
+    {
+      "name": "started_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "completed_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "created_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "Op",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "_timestamp",
+      "type": "VARCHAR"
+    }
+  ]
+}

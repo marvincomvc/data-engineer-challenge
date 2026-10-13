@@ -1,0 +1,52 @@
+{
+  "source_name": "reconciliation_results",
+  "file": "sample-data/reconciliation_results.parquet",
+  "format": "parquet",
+  "generated_at_utc": "2026-10-11T01:07:35.894338+00:00",
+  "columns": [
+    {
+      "name": "id",
+      "type": "BIGINT"
+    },
+    {
+      "name": "run_id",
+      "type": "BIGINT"
+    },
+    {
+      "name": "transaction_id",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "merchant_id",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "category",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "internal_amount",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "processor_amount",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "difference",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "created_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "Op",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "_timestamp",
+      "type": "VARCHAR"
+    }
+  ]
+}
