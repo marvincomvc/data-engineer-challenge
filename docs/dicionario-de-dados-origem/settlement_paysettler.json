@@ -1,0 +1,36 @@
+{
+  "source_name": "settlement_paysettler",
+  "file": "sample-data/settlement_paysettler.csv",
+  "format": "csv",
+  "generated_at_utc": "2026-10-11T01:07:35.956686+00:00",
+  "columns": [
+    {
+      "name": "transaction_id",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "merchant_id",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "amount",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "currency",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "settled_at",
+      "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    {
+      "name": "processor_reference",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "status",
+      "type": "VARCHAR"
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "source_name": "transactions_batch_2",
+  "file": "sample-data/transactions_batch_2.parquet",
+  "format": "parquet",
+  "generated_at_utc": "2026-10-11T01:07:35.860808+00:00",
+  "columns": [
+    {
+      "name": "id",
+      "type": "BIGINT"
+    },
+    {
+      "name": "transaction_id",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "merchant_id",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "amount",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "currency",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "status",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "description",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "created_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "updated_at",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "Op",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "_timestamp",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "payment_method",
+      "type": "VARCHAR"
+    }
+  ]
+}

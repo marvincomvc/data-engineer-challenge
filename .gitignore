@@ -1,9 +1,5 @@
 # Data pipeline outputs (candidate generates these)
 data/
-bronze/
-silver/
-gold/
-*.duckdb
 *.duckdb.wal
 _delta_log/
 
